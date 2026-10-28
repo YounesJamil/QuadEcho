@@ -40,7 +40,8 @@ private:
     {
         DelayLine dl;
         DelayLine first;   // gleiche Verzoegerung ohne Feedback: nur das erste Echo
-        float baseA = 0.0f, baseB = 0.0f, cur = 0.0f;
+        float baseA = 0.0f, baseB = 0.0f;
+        double cur = 0.0;   // Repitch-Glaettung in double: in float bleibt sie bis 1200 Samples vor dem Ziel stehen
         bool fading = false, init = false;
         int fadePos = 0, fadeLen = 1;
     };
@@ -59,7 +60,8 @@ private:
     float modSm[2] = { 0.0f, 0.0f };
     float fModSm = 0.0f;
     float env = 0.0f, envMapped = 0.0f;
-    float rpCoef = 0.001f, modCoef = 0.01f, envAtk = 0.01f, envRel = 0.001f, qCoef = 0.03f;
+    double rpCoef = 0.001;
+    float modCoef = 0.01f, envAtk = 0.01f, envRel = 0.001f, qCoef = 0.03f;
     float qSm[2] = { 0.8f, 0.8f };   // geglaettete Guete HP, LP
     float boostSm[2] = { 0.0f, 0.0f };   // geglaetteter Boost HP, LP (dB)
     PeakEq peakHp, peakLp;              // Glocke an der Grenzfrequenz

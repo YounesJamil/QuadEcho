@@ -149,6 +149,12 @@ std::vector<Case> baselineCases (double sr)
     cs.push_back ({ "feat_algo_switch", algoBase (0, Stereo),
                     [at] (size_t p, EngineSettings& st) { st.algorithm = (int) (p / at (0.25)) % kNumAlgorithms; } });
     cs.push_back ({ "feat_width_offset", single ([] (EchoSettings& c) { c.width = 1.8f; c.offset = 20.0f; c.offsetL = -10.0f; }), {} });
+    // ab Baseline v2
+    cs.push_back ({ "feat_lfo_off", single ([] (EchoSettings& c) { c.lfoOn = false; c.delayDepth = 0.4f; c.filterDepth = 0.5f; c.envMix = 0.5f; c.lpOn = true; }), {} });
+    cs.push_back ({ "feat_gain_minus12", single ([] (EchoSettings& c) { c.inGainDb = -12.0f; c.feedback = 0.9f; c.lpOn = true; c.res = 0.8f; c.lpBoost = 9.0f; }), {} });
+    for (int ld = 0; ld < 2; ++ld)
+        cs.push_back ({ ld ? "feat_hot_dry_limitdry" : "feat_hot_dry", withEngine (single ([] (EchoSettings& c) { c.feedback = 0.7f; }),
+                            [ld] (EngineSettings& s) { s.globalMix = 0.3f; s.globalOutDb = 9.0f; s.limitDry = ld != 0; }), {} });
     cs.push_back ({ "feat_fbscale_out", withEngine (algoBase (1, Stereo), [] (EngineSettings& s) { s.feedbackScale = 0.5f; s.globalOutDb = -3.0f; }), {} });
     return cs;
 }

@@ -32,6 +32,9 @@ double dbfs (double x);
 void writeF32 (const juce::File& f, const Sig& s);
 juce::var echoToVar (const EchoSettings& c);
 
+// Delay-Zeit einer Einheit in Samples, gemessen per Phasenvergleich (20-Hz-Sinus), settleSeconds nach einem Sprung fromMs -> toMs
+double measureDelaySamples (double sr, float fromMs, float toMs, int transition, double settleSeconds);
+
 // Audit-Messungen (Audit.cpp): QuadEchoTests --harness audit <name|all> [ausgabeordner]
 int auditMain (const juce::String& which, const juce::File& outDir);
 } // namespace harness

@@ -1223,6 +1223,16 @@ void testAuditFixes()
                "K-g: alte Zustaende (Version 5) behalten den Limiter auf dem Original");
     }
 
+    // K-a: Repitch erreicht die eingestellte Delay-Zeit (vorher blieb die float-Glaettung bis 1200 Samples davor stehen)
+    for (double fs : { 48000.0, 192000.0 })
+        for (const auto j : { std::pair<float, float> { 100.0f, 350.0f }, { 1000.0f, 4000.0f }, { 3999.0f, 3000.0f } })
+        {
+            const double soll = (double) j.second * fs / 1000.0;
+            const double ist = harness::measureDelaySamples (fs, j.first, j.second, Repitch, 4.0);
+            check (std::abs (ist - soll) < 0.05, "K-a: Repitch " + std::to_string ((int) j.first) + " -> " + std::to_string ((int) j.second)
+                   + " ms bei " + std::to_string ((int) fs) + " Hz: Abweichung " + std::to_string (ist - soll) + " Samples");
+        }
+
     // A2/A3: bei konstanten Parametern ist der Ausgang unabhaengig von der Blockgroesse (auch 1, 441, wechselnd)
     {
         auto render = [] (const harness::Case& c, const Sig& in, double fs, const std::function<int (size_t)>& next)

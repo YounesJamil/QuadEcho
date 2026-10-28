@@ -29,7 +29,7 @@ void DelayUnit::prepare (double sampleRate)
     fDepthSm.reset (sampleRate, 0.05);
     freezeSm.reset (sampleRate, 0.05);
 
-    rpCoef  = 1.0f - std::exp (-1.0f / (0.2f * (float) sr));
+    rpCoef  = 1.0 - std::exp (-1.0 / (0.2 * sr));
     qCoef   = 1.0f - std::exp (-(float) kSub / (0.03f * (float) sr));   // Resonanz, pro Teilblock
     modCoef = 1.0f - std::exp (-1.0f / (0.004f * (float) sr));
     envAtk  = 1.0f - std::exp (-1.0f / (0.005f * (float) sr));
@@ -80,7 +80,7 @@ float DelayUnit::readLine (Line& l, float modSamples, float target, int transiti
         return l.dl.readHermite (d);
     };
 
-    if (! l.init) { l.baseA = l.baseB = l.cur = target; l.init = true; }
+    if (! l.init) { l.baseA = l.baseB = target; l.cur = target; l.init = true; }
 
     // Freeze: ganzzahlige Verzoegerung (die Interpolation wuerde den Loop bei jeder Runde dunkler machen),
     // per Ueberblendung erreicht. Zeitaenderungen warten, bis Freeze wieder aus ist.
@@ -93,8 +93,9 @@ float DelayUnit::readLine (Line& l, float modSamples, float target, int transiti
 
     if (transition == Repitch)
     {
-        l.cur += (target - l.cur) * rpCoef;
-        l.baseA = l.cur;
+        l.cur += ((double) target - l.cur) * rpCoef;
+        if (std::abs ((double) target - l.cur) < 1.0e-6) l.cur = target;   // am Ziel einrasten
+        l.baseA = (float) l.cur;
         l.fading = false;
         return read2 (l.baseA + modSamples, first);
     }

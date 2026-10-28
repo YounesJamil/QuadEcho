@@ -155,41 +155,6 @@ void auditReset()
 }
 
 // ---------------------------------------------------------------------------
-// Delay-Zeit per Phasenvergleich: 20-Hz-Sinus, DFT ueber ganze Perioden der letzten Sekunde, Echo = Eingang um D verschoben.
-double measureDelaySamples (double sr, float fromMs, float toMs, int transition, double settleSeconds)
-{
-    const double f = 20.0;
-    const size_t n = (size_t) ((1.0 + settleSeconds + 1.0) * sr);
-    auto in = makeSig (n);
-    for (size_t i = 0; i < n; ++i) in.l[i] = in.r[i] = (float) (0.1 * std::sin (6.283185307179586 * f * (double) i / sr));
-    DelayUnit u;
-    u.prepare (sr);
-    EchoSettings s = wetOnly();
-    s.transition = transition;
-    s.timeL = fromMs;
-    Sig out = in, wet = in;
-    for (size_t pos = 0; pos < n; pos += 512)
-    {
-        const int len = (int) std::min<size_t> (512, n - pos);
-        if (pos >= (size_t) sr) s.timeL = toMs;
-        u.process (in.l.data() + pos, in.r.data() + pos, out.l.data() + pos, out.r.data() + pos, len, s, 120.0, wet.l.data() + pos, wet.r.data() + pos);
-    }
-    const size_t w = (size_t) sr, n0 = n - w;
-    std::complex<double> X, Y;
-    const double om = 6.283185307179586 * f / sr;
-    for (size_t i = n0; i < n; ++i)
-    {
-        const std::complex<double> e (std::cos (om * (double) i), -std::sin (om * (double) i));
-        X += (double) in.l[i] * e;
-        Y += (double) wet.l[i] * e;
-    }
-    double lag = std::arg (X) - std::arg (Y);   // = om * D (mod 2 pi)
-    const double period = sr / f, expect = (double) toMs * sr / 1000.0;
-    double D = lag / om;
-    D += period * std::round ((expect - D) / period);
-    return D;
-}
-
 void auditNumerics()
 {
     std::cout << "[Delay-Zeit nach einem Zeitsprung: Soll gegen Ist (Phasenmessung, 8 s nach dem Sprung)]" << std::endl;
@@ -466,6 +431,41 @@ void auditDumps (const juce::File& dir)
     std::cout << count << " Dumps nach " << dir.getFullPathName() << std::endl;
 }
 } // namespace
+
+// Delay-Zeit per Phasenvergleich: 20-Hz-Sinus, DFT ueber ganze Perioden der letzten Sekunde, Echo = Eingang um D verschoben.
+double measureDelaySamples (double sr, float fromMs, float toMs, int transition, double settleSeconds)
+{
+    const double f = 20.0;
+    const size_t n = (size_t) ((1.0 + settleSeconds + 1.0) * sr);
+    auto in = makeSig (n);
+    for (size_t i = 0; i < n; ++i) in.l[i] = in.r[i] = (float) (0.1 * std::sin (6.283185307179586 * f * (double) i / sr));
+    DelayUnit u;
+    u.prepare (sr);
+    EchoSettings s = wetOnly();
+    s.transition = transition;
+    s.timeL = fromMs;
+    Sig out = in, wet = in;
+    for (size_t pos = 0; pos < n; pos += 512)
+    {
+        const int len = (int) std::min<size_t> (512, n - pos);
+        if (pos >= (size_t) sr) s.timeL = toMs;
+        u.process (in.l.data() + pos, in.r.data() + pos, out.l.data() + pos, out.r.data() + pos, len, s, 120.0, wet.l.data() + pos, wet.r.data() + pos);
+    }
+    const size_t w = (size_t) sr, n0 = n - w;
+    std::complex<double> X, Y;
+    const double om = 6.283185307179586 * f / sr;
+    for (size_t i = n0; i < n; ++i)
+    {
+        const std::complex<double> e (std::cos (om * (double) i), -std::sin (om * (double) i));
+        X += (double) in.l[i] * e;
+        Y += (double) wet.l[i] * e;
+    }
+    double lag = std::arg (X) - std::arg (Y);   // = om * D (mod 2 pi)
+    const double period = sr / f, expect = (double) toMs * sr / 1000.0;
+    double D = lag / om;
+    D += period * std::round ((expect - D) / period);
+    return D;
+}
 
 int auditMain (const juce::String& which, const juce::File& outDir)
 {
