@@ -3,6 +3,7 @@
 //        QuadEchoTests --harness ...   (Referenz-Harness, siehe Harness.h)
 #include <chrono>
 #include "../Source/StateMigration.h"
+#include "../Source/Tail.h"
 #include "TestUtil.h"
 #include "Harness.h"
 #include "HarnessCommon.h"
@@ -1164,6 +1165,28 @@ void testAuditFixes()
                                                                && std::memcmp (x.r.data(), y.r.data(), x.r.size() * sizeof (float)) == 0; };
             check (same (a1, a2) && same (a1, a3), "A4: " + c.name + " nach reset()/prepare() bitgenau wie beim ersten Render");
         }
+    }
+
+    // A5: gemeldete Ausklingzeit deckt die echte ab (Ausgang danach unter -100 dBFS), unendlich bei Dauerschwingung
+    {
+        auto s = singleUnitSettings (0);
+        s.globalMix = 1.0f;
+        s.echo[0].feedback = 0.8f; s.echo[0].timeL = 1000.0f;
+        const double tail = tailSeconds (s, 120.0, sr);
+        QuadEngine e; e.prepare (sr);
+        const size_t n = (size_t) ((std::isfinite (tail) ? tail : 10.0) * sr) + (size_t) sr;
+        auto out = runEngine (e, s, impulse (n, 0), 512);
+        const float after = peakAbs (out.l, (size_t) (tail * sr), n);
+        check (std::isfinite (tail) && after < 1.0e-5f && tail < 47.1 * 1.5,
+               "A5: Tail bei Feedback 0.8 / 1 s: gemeldet " + std::to_string (tail) + " s, danach " + std::to_string (toDb (after)) + " dBFS");
+        auto lp = s.echo[0];
+        lp.hpOn = lp.lpOn = true; lp.hpHz = 150.0f; lp.lpHz = 2500.0f; lp.res = lp.hpRes = 1.0f; lp.hpBoost = lp.lpBoost = 12.0f;
+        check (std::abs (toDb ((float) loopFilterPeakGain (lp, sr)) - 22.5f) < 0.3f, "A5: Filter-Spitze in der Schleife wie analytisch (+22,5 dB)");
+        auto osc = s; osc.echo[0] = lp; osc.echo[0].feedback = 0.5f;
+        auto one = s; one.echo[0].feedback = 1.0f;
+        auto fr = s; fr.echo[0].freeze = true;
+        check (std::isinf (tailSeconds (osc, 120.0, sr)) && std::isinf (tailSeconds (one, 120.0, sr)) && std::isinf (tailSeconds (fr, 120.0, sr)),
+               "A5: unendlich bei Schleifenverstaerkung >= 1 und Freeze");
     }
 
     // A2/A3: bei konstanten Parametern ist der Ausgang unabhaengig von der Blockgroesse (auch 1, 441, wechselnd)

@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "StateMigration.h"
+#include "Tail.h"
 
 QuadEchoProcessor::QuadEchoProcessor()
     : AudioProcessor (BusesProperties()
@@ -66,6 +67,17 @@ void QuadEchoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
                 mono[pos + i] = 0.5f * (scratchL[(size_t) i] + scratchR[(size_t) i]);
         }
     }
+}
+
+double QuadEchoProcessor::getTailLengthSeconds() const
+{
+    qe::EngineSettings s;
+    reader.read (s);
+    const double sr = getSampleRate() > 0.0 ? getSampleRate() : 48000.0;
+    const double t = qe::tailSeconds (s, lastBpm.load (std::memory_order_relaxed), sr);
+    // VST3 kennt "unendlich" (JUCE meldet kInfiniteTail); AU reicht den Wert ungeprueft weiter, dort 10 Minuten
+    if (std::isinf (t) && wrapperType != wrapperType_VST3) return 600.0;
+    return t;
 }
 
 juce::AudioProcessorEditor* QuadEchoProcessor::createEditor() { return new QuadEchoEditor (*this); }
