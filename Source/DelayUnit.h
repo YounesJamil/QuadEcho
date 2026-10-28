@@ -14,6 +14,13 @@ class DelayUnit
 public:
     void prepare (double sampleRate);
     void reset();
+    // Wie reset(), aber die grossen Delay-Leitungen werden erst mit clearSome() nach und nach geloescht
+    // (bei 192 kHz 16 MB: in einem Block geloescht dauert das ein Vielfaches der Blockzeit).
+    // Vor dem naechsten process() muss finishClear() laufen, falls noch etwas uebrig ist.
+    void beginDeferredReset();
+    void clearSome (int samplesPerLine);
+    void finishClear() { clearSome (capacity); }
+    bool clearPending() const { return clearPos < capacity; }
     void process (const float* inL, const float* inR, float* outL, float* outR,
                   int n, const EchoSettings& s, double bpm,
                   float* wetOutL = nullptr, float* wetOutR = nullptr,
@@ -39,9 +46,11 @@ private:
     };
 
     float readLine (Line& l, float modSamples, float target, int transition, float& first, bool needFirst, bool frozen);
+    void resetState();
 
     double sr = 44100.0;
     int capacity = 0;
+    int clearPos = 0;   // bis hierhin sind die Leitungen geloescht (capacity = fertig)
     std::array<Line, 2> line;
     juce::dsp::StateVariableTPTFilter<float> hp, lp;      // 2. Ordnung mit Resonanz ...
     juce::dsp::FirstOrderTPTFilter<float> hp1, lp1;        // ... plus 1. Ordnung = 18 dB/Oktave

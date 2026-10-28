@@ -17,6 +17,13 @@ public:
         writePos = 0;
     }
     void clear() { std::fill (buf.begin(), buf.end(), 0.0f); }
+    // Teil des Puffers loeschen (verteiltes Loeschen ueber mehrere Audio-Bloecke)
+    void clearRange (int start, int count)
+    {
+        start = std::min (std::max (start, 0), capacity());
+        count = std::min (std::max (count, 0), capacity() - start);
+        std::fill (buf.begin() + start, buf.begin() + start + count, 0.0f);
+    }
     int capacity() const { return mask + 1; }
 
     void push (float x) { writePos = (writePos + 1) & mask; buf[(size_t) writePos] = x; }

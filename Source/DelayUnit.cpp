@@ -40,7 +40,28 @@ void DelayUnit::prepare (double sampleRate)
 
 void DelayUnit::reset()
 {
-    for (auto& l : line) { l.dl.clear(); l.first.clear(); l.fading = false; l.init = false; }
+    for (auto& l : line) { l.dl.clear(); l.first.clear(); }
+    clearPos = capacity;
+    resetState();
+}
+
+void DelayUnit::beginDeferredReset()
+{
+    clearPos = 0;
+    resetState();
+}
+
+void DelayUnit::clearSome (int samplesPerLine)
+{
+    if (clearPos >= capacity) return;
+    const int count = std::min (samplesPerLine, capacity - clearPos);
+    for (auto& l : line) { l.dl.clearRange (clearPos, count); l.first.clearRange (clearPos, count); }
+    clearPos += count;
+}
+
+void DelayUnit::resetState()
+{
+    for (auto& l : line) { l.fading = false; l.init = false; }
     hp.reset(); lp.reset(); hp1.reset(); lp1.reset(); peakHp.reset(); peakLp.reset();
     lfoPos = 0.0; modSm[0] = modSm[1] = fModSm = 0.0f; env = envMapped = 0.0f;
     lastTransition = -1;

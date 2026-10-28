@@ -226,6 +226,7 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
 
         if (active)
         {
+            if (units[uu].clearPending()) units[uu].finishClear();   // vor dem Ende des verteilten Loeschens wieder an
             wasActive[uu] = true;
             EchoSettings es = s.echo[uu];
             es.feedback *= s.feedbackScale;
@@ -250,7 +251,8 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
         }
         else
         {
-            if (wasActive[uu]) { units[uu].reset(); wasActive[uu] = false; }
+            if (wasActive[uu]) { units[uu].beginDeferredReset(); wasActive[uu] = false; }
+            units[uu].clearSome (n * kClearPerSample);
             std::copy (src.l.begin(), src.l.begin() + n, outs[uu].l.begin());
             std::copy (src.r.begin(), src.r.begin() + n, outs[uu].r.begin());
             std::copy (origSrc.l.begin(), origSrc.l.begin() + n, origs[uu].l.begin());

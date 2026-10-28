@@ -1126,6 +1126,27 @@ void testAuditFixes()
             check (peakAbs (out.l, (size_t) (1.05 * sr), n) > 0.01f, "A1: nach dem Fehler kommen wieder Echos");
         }
     }
+
+    // B1: Ausschalten einer Einheit darf keinen Block um ein Vielfaches verlaengern (192 kHz, Block 32, CPU-Zeit des Threads)
+    {
+        const double fs = 192000.0;
+        QuadEngine e; e.prepare (fs);
+        EngineSettings s = harness::worstCase();
+        const size_t n = (size_t) (3.0 * fs);
+        auto io = noise (n, 0.3f, 3);
+        std::vector<double> cyc;
+        for (size_t pos = 0; pos < n; pos += 32)
+        {
+            s.echo[1].on = (pos / (size_t) (0.25 * fs)) % 2 == 0;
+            const auto c0 = harness::threadCycles();
+            e.process (io.l.data() + pos, io.r.data() + pos, 32, s, 120.0);
+            if (pos >= (size_t) (0.3 * fs)) cyc.push_back ((double) (harness::threadCycles() - c0));
+        }
+        std::sort (cyc.begin(), cyc.end());
+        const double median = cyc[cyc.size() / 2], third = cyc[cyc.size() - 3];
+        check (median <= 0.0 || third < 6.0 * median, "B1: Einheit aus kostet hoechstens 6 x Median-Block (drittgroesster Block "
+               + std::to_string (third / std::max (median, 1.0)) + " x)");
+    }
 }
 
 void benchmark()

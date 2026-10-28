@@ -40,6 +40,7 @@ public:
 
 private:
     static constexpr int kChunk = 256;
+    static constexpr int kClearPerSample = 512;   // verteiltes Loeschen einer ausgeschalteten Einheit: Samples je Leitung pro Audio-Sample
     struct Block { std::array<float, kChunk> l {}, r {}; };
 
     void processChunk (float* l, float* r, int n, const EngineSettings& s, double bpm);
