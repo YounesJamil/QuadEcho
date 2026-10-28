@@ -1233,6 +1233,17 @@ void testAuditFixes()
                    + " ms bei " + std::to_string ((int) fs) + " Hz: Abweichung " + std::to_string (ist - soll) + " Samples");
         }
 
+    // K-b: Delay-Index in double: eine lange gebrochene Zeit sitzt genau (float: Stufen von 1/16 Sample bei 4 s / 192 kHz;
+    // 3999,99 ms = 767998,08 Samples wurden zu 767998,0625)
+    {
+        const double fs = 192000.0;
+        const double soll = 3999.99 * fs / 1000.0;
+        const double ist = harness::measureDelaySamples (fs, 3999.99f, 3999.99f, Fade, 4.5);
+        const double sollF = (double) 3999.99f * fs / 1000.0;   // der Parameter selbst ist float
+        check (std::abs (ist - sollF) < 0.002, "K-b: 3999,99 ms bei 192 kHz auf 0,002 Samples genau (Abweichung "
+               + std::to_string (ist - sollF) + ", Soll " + std::to_string (soll) + ")");
+    }
+
     // A2/A3: bei konstanten Parametern ist der Ausgang unabhaengig von der Blockgroesse (auch 1, 441, wechselnd)
     {
         auto render = [] (const harness::Case& c, const Sig& in, double fs, const std::function<int (size_t)>& next)
