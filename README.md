@@ -109,7 +109,7 @@ Nur Einheiten, die im Algorithmus zum Ausgang gehören, haben eine hörbare Posi
 
 ### Psychoakustik der Platzierung
 
-Es wird nur der **Echo-Anteil (Wet)** platziert. Das Original (Dry) bleibt unplatziert in der Mitte, außer `PLACE DRY` der Einheit ist an (dann wandert auch das Original an die Position der Einheit).
+Im Raum platziert werden die **Echos**. Das Original bleibt in der Mitte. Mit `PLACE DRY` wandert der Anteil des Originals, der über diese Einheit läuft, **nur per Pegel** zur linken oder rechten Seite der Einheit, ohne Entfernung, Laufzeit, Luftfilter und Reflexionen. So bleibt das Original gleich laut und färbt sich nicht: Ein verzögerter oder gefilterter Teil würde sich mit dem Rest des Originals zu einem Kammfilter überlagern.
 
 - **Entfernung:** Bis zum 2. Ring bleibt eine Quelle nah und präsent (1 bis 1,4 m, höchstens -3 dB, kaum Luftdämpfung). Danach greift die Entfernung steil: äußerer Ring 4 m (-12 dB), Ecken ca. 5,6 m (-15 dB). Dazu Luftabsorption (Tiefpass), schmalere Stereobreite, optional frühe Reflexionen und Laufzeit. Gilt gleich für Lautsprecher und Kopfhörer.
 - **Stereo-Modus:** Equal-Power-Pan nach X, Laufzeitdifferenz bis 0,6 ms, Höhenverlust am abgewandten Ohr. **Hinten** klingt dezent dumpfer und leiser. Stereo kann hinten nicht wirklich abbilden: ohne Binaural klingt "hinten" eher wie "vorne, weiter weg und dunkler".

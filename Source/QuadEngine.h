@@ -53,7 +53,7 @@ private:
     GlobalFilter gfilter;
     std::array<juce::SmoothedValue<float>, kNumUnits> onSm, outW;
     juce::SmoothedValue<float> activeSm, deadSm, intoSm, inclDrySm;
-    std::array<juce::SmoothedValue<float>, kNumUnits> dryPlaceSm;
+    std::array<juce::SmoothedValue<float>, kNumUnits> dryPlaceSm, dryPanSm;   // Place Dry: Anteil und Seite (X)
     std::array<bool, kNumUnits> wasActive { { false, false, false, false } };
     std::array<bool, kNumUnits> spatialLive { { false, false, false, false } };
     bool noiseSpatialLive = false;

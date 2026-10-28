@@ -28,7 +28,7 @@ inline juce::String tooltipForUnitParam (int p)
         case pFbInv:   return "Inverts the phase of the feedback.";
         case pInGain:  return "Level into the delay. Above 0 dB it adds warm analog-style saturation (more gain = more drive). Affects the echoes only, unless 'Gain on dry' is on.";
         case pInDry:   return "Also applies the input gain (and the drive) to this unit's share of the original.";
-        case pPosDry:  return "Also places this unit's share of the original at its position (not only the echoes).";
+        case pPosDry:  return "Moves this unit's share of the original to the unit's left/right position (level only: no distance, no delay, same loudness).";
         case pHpOn:    return "Highpass in the feedback path: the repeats get slimmer (first echo untouched).";
         case pLpOn:    return "Lowpass in the feedback path: the repeats get darker (first echo untouched).";
         case pHp:      return "Highpass cutoff in the feedback path.";

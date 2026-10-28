@@ -714,7 +714,7 @@ void testNewFeatures()
         };
         const auto off = run (false), on = run (true);
         check (std::abs (off.l[100] - 1.0f) < 0.05f && std::abs (off.r[100] - 1.0f) < 0.05f, "Place Dry aus: Original bleibt mittig (L " + std::to_string (off.l[100]) + ", R " + std::to_string (off.r[100]) + ")");
-        check (on.l[100] > 0.1f && on.l[100] < 0.5f && std::abs (on.r[100]) < 0.01f, "Place Dry an: Original wandert nach links und wird leiser (L " + std::to_string (on.l[100]) + ", R " + std::to_string (on.r[100]) + ")");
+        check (std::abs (on.l[100] - 1.41421356f) < 0.05f && std::abs (on.r[100]) < 0.01f, "Place Dry an: Original wandert ganz nach links, gleiche Leistung (L " + std::to_string (on.l[100]) + ", R " + std::to_string (on.r[100]) + ")");
     }
 
     // Analoger Drive: Input-Gain ueber 0 dB saettigt weich (Pegel waechst weniger als linear, Obertoene), 0 dB bleibt transparent
@@ -1212,6 +1212,35 @@ void testPlacement()
     check (dual.weight[0] == 1.0f && dual.weight[3] == 0.0f && dual.idle[3], "Dual Chain, nur A: A platziert, D vorab platzierbar");
     auto mutedC = placementOf (0, { { true, true, true, false } }, { { false, false, true, false } }, none);
     check (mutedC.weight[2] == 0.0f && mutedC.dead == 1.0f, "Serial, D aus, C stumm: nichts hoerbar");
+
+    // Place Dry auf einer von drei parallelen Einheiten (A mittig, B links, C rechts) betrifft nur ihr Drittel
+    // des Originals: Pegel des Originals (vor dem ersten Echo) mit und ohne Place Dry auf A
+    {
+        const double sr = 48000.0;
+        auto dryLevel = [&] (bool placeA, bool distDelay, bool early)
+        {
+            QuadEngine e; e.prepare (sr);
+            EngineSettings s; s.algorithm = 9; s.softLimiter = false; s.distanceDelay = distDelay; s.earlyReflections = early;
+            for (int u = 0; u < 3; ++u)
+            {
+                auto& c = s.echo[(size_t) u];
+                c.on = true; c.sync = false; c.timeL = 400.0f; c.feedback = 0.0f;
+            }
+            s.echo[0].positionDry = placeA;
+            s.pos[0] = { 0.0f, 0.0f, 0.0f };
+            s.pos[1] = { -0.6f, 0.3f, 0.0f };
+            s.pos[2] = { 0.6f, 0.3f, 0.0f };
+            const auto o = runEngine (e, s, noise ((size_t) (0.35 * sr), 0.3f, 4), 256);
+            return 0.5f * (rms (o.l, (size_t) (0.1 * sr), (size_t) (0.35 * sr)) + rms (o.r, (size_t) (0.1 * sr), (size_t) (0.35 * sr)));
+        };
+        for (int variant = 0; variant < 3; ++variant)
+        {
+            const bool dd = variant == 1, er = variant == 2;
+            const float off = dryLevel (false, dd, er), on = dryLevel (true, dd, er);
+            check (std::abs (toDb (on / off)) < 0.2f, std::string ("Place Dry auf A (mittig, 1 von 3 Einheiten") + (dd ? ", Dist. Delay" : "") + (er ? ", Early Refl." : "")
+                                                       + "): Original bleibt gleich laut (" + std::to_string (toDb (on / off)) + " dB)");
+        }
+    }
 
     // Im Klang: Serial mit D aus, C ganz links, D ganz rechts -> die Echos kommen links
     {

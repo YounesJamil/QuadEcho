@@ -26,6 +26,7 @@ void QuadEngine::prepare (double sampleRate)
     for (auto& o : onSm) o.reset (sampleRate, 0.02);
     for (auto& o : outW) o.reset (sampleRate, 0.02);
     for (auto& o : dryPlaceSm) o.reset (sampleRate, 0.03);
+    for (auto& o : dryPanSm) o.reset (sampleRate, 0.05);
     activeSm.reset (sampleRate, 0.02);
     deadSm.reset (sampleRate, 0.02);
     intoSm.reset (sampleRate, 0.02);
@@ -107,6 +108,7 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
         {
             onSm[(size_t) u].setCurrentAndTargetValue (s.echo[(size_t) u].on ? 1.0f : 0.0f);
             dryPlaceSm[(size_t) u].setCurrentAndTargetValue (s.echo[(size_t) u].positionDry ? 1.0f : 0.0f);
+            dryPanSm[(size_t) u].setCurrentAndTargetValue (juce::jlimit (-1.0f, 1.0f, s.pos[(size_t) u].x));
         }
         snapWeights = true;
         initialised = true;
@@ -286,6 +288,7 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
             // Die Echos werden im Raum platziert. Das Original bleibt unplatziert, ausser "Place Dry"
             // ist an (weich ueberblendet; der Spatializer ist linear).
             dryPlaceSm[uu].setTargetValue (s.echo[uu].positionDry ? 1.0f : 0.0f);
+            dryPanSm[uu].setTargetValue (juce::jlimit (-1.0f, 1.0f, s.pos[uu].x));
             // Echo-Anteil = Ausgang minus Original-Spur (auch Echos frueherer Einheiten in der Kette);
             // globaler Filter darauf, optional ohne das erste Echo dieser Einheit
             const bool skip = needFirst;
@@ -309,13 +312,28 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
             {
                 const auto ui = (size_t) i;
                 const float a = dryPlaceSm[uu].getNextValue();
-                const float we = wetGa[ui] * duckGa[ui], dp = a * dryGa[ui];
-                // Echos mit Wet-Anteil und Ducking, dazu der platzierte Teil des Originals mit Dry-Anteil
-                spOut[uu].l[ui] = wetM.l[ui] * we + origs[uu].l[ui] * dp;
-                spOut[uu].r[ui] = wetM.r[ui] * we + origs[uu].r[ui] * dp;
-                // unplatzierter Teil des Originals (der globale Filter erreicht ihn nur mit "Include dry")
-                spDry[uu].l[ui] = (1.0f - a) * origs[uu].l[ui];
-                spDry[uu].r[ui] = (1.0f - a) * origs[uu].r[ui];
+                const float px = dryPanSm[uu].getNextValue();
+                const float we = wetGa[ui] * duckGa[ui];
+                // Echos mit Wet-Anteil und Ducking werden im Raum platziert
+                spOut[uu].l[ui] = wetM.l[ui] * we;
+                spOut[uu].r[ui] = wetM.r[ui] * we;
+                // Anteil des Originals: mit "Place Dry" nur per Pegel an die Seite der Einheit (Equal-Power,
+                // Breite schrumpft zur Seite hin). Ohne Laufzeit, Entfernung, Luftfilter und Reflexionen: sonst
+                // ergibt er mit dem Rest des Originals einen Kammfilter, und das Original wird leiser und duenner.
+                const float ol = origs[uu].l[ui], orr = origs[uu].r[ui];
+                if (a > 0.0f)
+                {
+                    const float th = (px + 1.0f) * 0.78539816f;
+                    const float gl = 1.41421356f * std::cos (th), gr = 1.41421356f * std::sin (th);
+                    const float mid = 0.5f * (ol + orr), side = 0.5f * (ol - orr) * (1.0f - std::abs (px));
+                    spDry[uu].l[ui] = ol + a * ((mid + side) * gl - ol);
+                    spDry[uu].r[ui] = orr + a * ((mid - side) * gr - orr);
+                }
+                else
+                {
+                    spDry[uu].l[ui] = ol;
+                    spDry[uu].r[ui] = orr;
+                }
             }
             spatial[uu].process (spOut[uu].l.data(), spOut[uu].r.data(), n, s.pos[uu], so);
         }
@@ -380,7 +398,7 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
         outGa[ui] = outSm.getNextValue();
         inclA[ui] = inclDrySm.getNextValue();
 
-        // Original: Mittel der unplatzierten Anteile der Ausgangseinheiten (mit Gain on Dry, Output, Mute).
+        // Original: Mittel der Anteile der Ausgangseinheiten (mit Place Dry seitlich verschoben) (mit Gain on Dry, Output, Mute).
         // Waehrend eines Algorithmuswechsels und ohne Ausgangseinheit das Eingangssignal selbst.
         float oL = ext.l[ui], oR = ext.r[ui];
         if (sumW > 1e-6f)
