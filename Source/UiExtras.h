@@ -36,6 +36,7 @@ inline juce::String tooltipForUnitParam (int p)
         case pRes:     return "Resonance of both filters. High values can ring.";
         case pTrans:   return "What happens when the delay time changes: Repitch = tape-like pitch glide, Fade = smooth crossfade, Jump = immediate (with a tiny crossfade).";
         case pMix:     return "Echo level of this unit. The signal passing through stays untouched (like a pedal). How much of the original you hear at the output is set by Global Dry/Wet.";
+        case pFbStable: return "STABLE: the feedback filter may colour the repeats, but no frequency gets louder from repeat to repeat than the feedback allows. Off: high resonance or boost can make the loop swell up and self-oscillate (dub style).";
         case pFreeze:  return "Holds the echoes in an endless loop: the input closes, the feedback is exactly 100 %, filters and saturation are bypassed. Time changes wait until freeze is off.";
         case pOut:     return "Output level of this unit (-24 to +12 dB). To switch a unit off use UNIT ON (bypass) or M (mute).";
         case pWidth:   return "Stereo width of the echoes.";

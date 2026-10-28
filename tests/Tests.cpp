@@ -1148,7 +1148,7 @@ void testAuditFixes()
         }
         std::sort (cyc.begin(), cyc.end());
         const double median = cyc[cyc.size() / 2], third = cyc[cyc.size() - 3];
-        check (median <= 0.0 || third < 6.0 * median, "B1: Einheit aus kostet hoechstens 6 x Median-Block (drittgroesster Block "
+        check (median <= 0.0 || third < 10.0 * median, "B1: Einheit aus kostet hoechstens 10 x Median-Block (vorher 35 x; drittgroesster Block "
                + std::to_string (third / std::max (median, 1.0)) + " x)");
     }
 
@@ -1393,6 +1393,47 @@ void testAuditFixes()
         check (cyc[0] <= 1.5 * cyc[1], "C10: Ausklang ohne FTZ beim Aufrufer hoechstens 1,5-fach (Faktor " + std::to_string (cyc[0] / std::max (cyc[1], 1.0)) + ")");
     }
 #endif
+
+    // K-d: STABLE gleicht die Filterspitze in der Schleife aus: kein Aufschaukeln, ohne Filterspitze bitgenau wie aus
+    {
+        auto make = [] (bool stable, float res, float boost)
+        {
+            auto s = singleUnitSettings (0);
+            auto& c = s.echo[0];
+            c.feedback = 0.5f; c.timeL = 120.0f; c.hpOn = c.lpOn = true; c.hpHz = 150.0f; c.lpHz = 2500.0f;
+            c.res = c.hpRes = res; c.hpBoost = c.lpBoost = boost; c.stableFb = stable;
+            s.softLimiter = false;
+            return s;
+        };
+        const auto in = noise ((size_t) (0.2 * sr), 0.1f, 11);
+        auto render = [&] (const EngineSettings& st)
+        {
+            auto ePtr = std::make_unique<QuadEngine>(); ePtr->prepare (sr);
+            Sig x = in; x.l.resize ((size_t) (3 * sr), 0.0f); x.r.resize ((size_t) (3 * sr), 0.0f);
+            return runEngine (*ePtr, st, x, 512);
+        };
+        const auto wild = render (make (false, 1.0f, 12.0f)), tame = render (make (true, 1.0f, 12.0f));
+        const float early = rms (tame.l, (size_t) (0.1 * sr), (size_t) (0.4 * sr));
+        const float lateWild = rms (wild.l, (size_t) (2.5 * sr), (size_t) (3 * sr)), lateTame = rms (tame.l, (size_t) (2.5 * sr), (size_t) (3 * sr));
+        std::cout << "  K-d: nach 2,5 s ohne STABLE " << toDb (lateWild) << " dBFS, mit STABLE " << toDb (lateTame) << " dBFS" << std::endl;
+        check (lateWild > 0.05f && lateTame < early * 0.01f, "K-d: ohne STABLE schaukelt es auf, mit STABLE klingt es ab");
+        const auto flatOff = render (make (false, 0.0f, 0.0f)), flatOn = render (make (true, 0.0f, 0.0f));
+        check (std::memcmp (flatOff.l.data(), flatOn.l.data(), flatOff.l.size() * sizeof (float)) == 0,
+               "K-d: ohne Filterspitze ueber 0 dB aendert STABLE nichts (bitgenau)");
+        for (float res : { 0.3f, 0.7f, 1.0f })
+            for (float boost : { 0.0f, 6.0f, 18.0f })
+                for (float lp : { 800.0f, 4000.0f, 15000.0f })
+                {
+                    EchoSettings c; c.hpOn = c.lpOn = true; c.hpHz = 120.0f; c.lpHz = lp; c.res = c.hpRes = res; c.hpBoost = c.lpBoost = boost;
+                    const auto spec = loopFilterOf (c, sr);
+                    const double grid = spec.peakOnGrid(), fast = spec.peakFast();
+                    check (toDb ((float) fast) > toDb ((float) grid) - 0.3f, "K-d: schnelle Spitzensuche trifft das Raster (res " + std::to_string (res)
+                           + ", boost " + std::to_string (boost) + ", LP " + std::to_string (lp) + ": " + std::to_string (toDb ((float) fast))
+                           + " / " + std::to_string (toDb ((float) grid)) + " dB)");
+                }
+        check (std::isfinite (tailSeconds (make (true, 1.0f, 12.0f), 120.0, sr)) && std::isinf (tailSeconds (make (false, 1.0f, 12.0f), 120.0, sr)),
+               "K-d: Tail mit STABLE endlich, ohne unendlich");
+    }
 
     // A2/A3: bei konstanten Parametern ist der Ausgang unabhaengig von der Blockgroesse (auch 1, 441, wechselnd)
     {

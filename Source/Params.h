@@ -11,7 +11,7 @@ enum P
     pFb, pFbInv, pInGain, pInDry, pPosDry, pHpOn, pLpOn, pHp, pLp, pRes, pTrans,
     pMix, pOut, pWidth,
     pLfoOn, pWave, pRate, pLfoSync, pLfoDiv, pPhase, pFPhase, pX4, pDDepth, pFDepth, pEnv,
-    pPosX, pPosY, pPosZ, pFreeze, pSyncMode, pSixL, pSixR, pOffsetL, pHpRes, pSyncModeR, pHpBoost, pLpBoost,
+    pPosX, pPosY, pPosZ, pFreeze, pSyncMode, pSixL, pSixR, pOffsetL, pHpRes, pSyncModeR, pHpBoost, pLpBoost, pFbStable,
     pCount
 };
 
@@ -22,7 +22,7 @@ inline const char* const kParamNames[pCount] = {
     "fb", "fbInv", "inGain", "inDry", "posDry", "hpOn", "lpOn", "hp", "lp", "res", "trans",
     "mix", "out", "width",
     "lfoOn", "wave", "rate", "lfoSync", "lfoDiv", "phase", "fPhase", "x4", "dDepth", "fDepth", "env",
-    "posX", "posY", "posZ", "freeze", "syncMode", "sixL", "sixR", "offsetL", "hpRes", "syncModeR", "hpBoost", "lpBoost" };
+    "posX", "posY", "posZ", "freeze", "syncMode", "sixL", "sixR", "offsetL", "hpRes", "syncModeR", "hpBoost", "lpBoost", "fbStable" };
 
 inline const char* const kUnitLetters[kNumUnits] = { "a", "b", "c", "d" };
 

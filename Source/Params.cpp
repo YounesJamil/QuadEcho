@@ -162,6 +162,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         group->addChild (std::make_unique<FloatP> (id (pPosY), L + "Position Y", Range (-1.0f, 1.0f, 0.001f), defY[u], unit ("")));
         group->addChild (std::make_unique<FloatP> (id (pPosZ), L + "Position Z", Range (-1.0f, 1.0f, 0.001f), 0.0f, unit ("")));
         group->addChild (std::make_unique<BoolP> (id (pFreeze), L + "Freeze", false));
+        group->addChild (std::make_unique<BoolP> (id (pFbStable), L + "Feedback Stable", false));
         group->addChild (std::make_unique<ChoiceP> (id (pSyncMode), L + "Sync Mode L", juce::StringArray { "Notes", "Triplet", "Dotted", "16th" }, Sync16th));
         group->addChild (std::make_unique<ChoiceP> (id (pSyncModeR), L + "Sync Mode R", juce::StringArray { "Notes", "Triplet", "Dotted", "16th" }, Sync16th));
         group->addChild (std::make_unique<juce::AudioParameterInt> (id (pSixL), L + "16ths L", 1, kMaxSixteenths, defSix[u]));
@@ -209,7 +210,7 @@ void ParamReader::readUnit (int u, EchoSettings& c, PosSettings& pos) const
     c.mix = f (pMix); c.outDb = f (pOut); c.width = f (pWidth);
     c.wave = i (pWave); c.rateHz = f (pRate); c.lfoSync = b (pLfoSync); c.lfoDiv = i (pLfoDiv);
     c.phaseDeg = f (pPhase); c.lfoOn = b (pLfoOn); c.filterPhaseDeg = f (pFPhase); c.x4 = b (pX4); c.delayDepth = f (pDDepth);
-    c.filterDepth = f (pFDepth); c.envMix = f (pEnv); c.freeze = b (pFreeze);
+    c.filterDepth = f (pFDepth); c.envMix = f (pEnv); c.freeze = b (pFreeze); c.stableFb = b (pFbStable);
     c.syncMode = i (pSyncMode); c.syncModeR = i (pSyncModeR); c.sixL = i (pSixL); c.sixR = i (pSixR); c.offsetL = f (pOffsetL); c.hpRes = f (pHpRes); c.hpBoost = f (pHpBoost); c.lpBoost = f (pLpBoost);
     pos = { f (pPosX), f (pPosY), f (pPosZ) };
 }

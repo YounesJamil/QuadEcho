@@ -57,6 +57,7 @@ struct EchoSettings
     bool lfoOn = true;          // LFO als Modulationsquelle an/aus (Huellkurve bleibt aktiv)
     float filterPhaseDeg = 0.0f; // Phasenversatz der Filter-Modulation relativ zur Delay-Modulation
     bool freeze = false;        // Schleife halten: Eingang zu, Feedback genau 1, ohne Filter und Saettigung
+    bool stableFb = false;      // STABLE: Filterspitze in der Schleife ausgleichen (kein Aufschaukeln durch Resonanz/Boost)
 };
 
 struct PosSettings

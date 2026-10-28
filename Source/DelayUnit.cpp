@@ -1,4 +1,5 @@
 #include "DelayUnit.h"
+#include "Tail.h"
 
 namespace qe
 {
@@ -66,6 +67,8 @@ void DelayUnit::resetState()
     hp.reset(); lp.reset(); hp1.reset(); lp1.reset(); peakHp.reset(); peakLp.reset();
     lfoPos = 0.0; modSm[0] = modSm[1] = fModSm = 0.0; env = 0.0; envMapped = 0.0f;
     lastTransition = -1;
+    stableComp = stableTarget = 1.0f;
+    stableKey = {};
     for (auto& o : osX) o.reset();
     for (auto& o : osF) o.reset();
     for (auto& d : rDelay) d.reset();
@@ -237,6 +240,25 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
                 if (lpPeak) peakLp.set (sr, fc, qLp, boostSm[1]); else peakLp.reset();
             }
             else { lp.reset(); lp1.reset(); peakLp.reset(); }
+
+            // STABLE: Verstaerkung der Filterkette an ihrer Spitze ausgleichen, damit keine Frequenz pro Runde lauter
+            // wird als das Feedback (ohne STABLE darf die Schleife an der Resonanz aufschaukeln)
+            float compTarget = 1.0f;
+            if (s.stableFb && (s.hpOn || s.lpOn))
+            {
+                const double hpFc = std::min (std::max ((double) s.hpHz * fm, 20.0), (double) maxF);
+                const double lpFc = std::min (std::max ((double) s.lpHz * fm, 100.0), (double) maxF);
+                const std::array<double, 7> key { { (s.hpOn ? 1.0 : 0.0) + (s.lpOn ? 2.0 : 0.0), hpFc, lpFc, qHp, qLp, boostSm[0], boostSm[1] } };
+                if (key != stableKey)
+                {
+                    const LoopFilterSpec spec (sr, s.hpOn, hpFc, qHp, boostSm[0], s.lpOn, lpFc, qLp, boostSm[1]);
+                    stableTarget = (float) (1.0 / std::max (1.0, spec.peakFast()));
+                    stableKey = key;
+                }
+                compTarget = stableTarget;
+            }
+            stableComp += (compTarget - stableComp) * qCoef;
+            if (std::abs (compTarget - stableComp) < 1.0e-6f) stableComp = compTarget;
             modPub.store ((float) (0.5 * (modSm[0] + modSm[1])), std::memory_order_relaxed);
             envPub.store (envMapped, std::memory_order_relaxed);
         }
@@ -299,6 +321,7 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
             if (lpOn) { f0 = lp1.processSample (0, lp.processSample (0, f0)); f1 = lp1.processSample (1, lp.processSample (1, f1)); }
             if (hpPeak) { f0 = peakHp.process (0, f0); f1 = peakHp.process (1, f1); }
             if (lpPeak) { f0 = peakLp.process (0, f0); f1 = peakLp.process (1, f1); }
+            if (stableComp != 1.0f) { f0 *= stableComp; f1 *= stableComp; }
             float rr0 = r0, rr1 = r1;   // unveraenderter Loop fuer Freeze, zeitlich passend zu den Saettigungspfaden
             if (useOs)
             {

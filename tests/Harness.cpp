@@ -155,6 +155,10 @@ std::vector<Case> baselineCases (double sr)
     for (int ld = 0; ld < 2; ++ld)
         cs.push_back ({ ld ? "feat_hot_dry_limitdry" : "feat_hot_dry", withEngine (single ([] (EchoSettings& c) { c.feedback = 0.7f; }),
                             [ld] (EngineSettings& s) { s.globalMix = 0.3f; s.globalOutDb = 9.0f; s.limitDry = ld != 0; }), {} });
+    // ab Baseline v6
+    cs.push_back ({ "feat_fb_stable", single ([] (EchoSettings& c) {
+                        c.feedback = 0.8f; c.hpOn = c.lpOn = true; c.hpHz = 200.0f; c.lpHz = 2500.0f; c.res = c.hpRes = 1.0f;
+                        c.hpBoost = c.lpBoost = 12.0f; c.filterDepth = 0.5f; c.rateHz = 0.7f; c.stableFb = true; }), {} });
     cs.push_back ({ "feat_fbscale_out", withEngine (algoBase (1, Stereo), [] (EngineSettings& s) { s.feedbackScale = 0.5f; s.globalOutDb = -3.0f; }), {} });
     return cs;
 }

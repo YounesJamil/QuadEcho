@@ -87,6 +87,9 @@ private:
     int framePos = 0;                   // Position im 16er-Teilblock (Steuerraster), ueber Aufrufe hinweg
     SatCoefs frameSat;                  // Steuerwerte des laufenden Teilblocks
     bool frameHpOn = false, frameLpOn = false, frameHpPeak = false, frameLpPeak = false;
+    float stableComp = 1.0f;            // STABLE: 1 / Filterspitze in der Schleife, je Teilblock geglaettet (~30 ms)
+    std::array<double, 7> stableKey {};  // Filterwerte der letzten Spitzensuche (nur bei Aenderung neu rechnen)
+    float stableTarget = 1.0f;
     bool initialised = false;
     bool poisoned = false;   // ein Schleifen-Sample war nicht endlich: am Blockende neu aufsetzen
 };

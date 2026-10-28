@@ -95,6 +95,7 @@ public:
         addChoice (pTrans, ui::makeTransitionChoice (apvts, id (pTrans), col));
         addToggle (pFbInv, juce::String::fromUTF8 ("\xc3\x98 INVERT"));
         addToggle (pFreeze, "FREEZE");
+        addToggle (pFbStable, "STABLE");
 
         // ---- Feedback-Filter als EQ-Kurve ----
         addChildComponent (filterGraph);
@@ -187,6 +188,7 @@ public:
 
         echoDisplay.setBounds (cardPreview().withTrimmedTop (4));
         filterGraph.setBounds (cardFilter().reduced (8, 0).withTrimmedTop (20).withTrimmedBottom (8));
+        at (toggles[pFbStable].get(), juce::Rectangle<int> (cardFilter().getRight() - 196, cardFilter().getY() + 3, 70, 16));
 
         const auto lv = cardLevel();
         at (knobs[pInGain].get(), kb (lv, 0));
@@ -254,7 +256,7 @@ private:
         for (auto& b : offsetBox) b.setVisible (echo);
         for (int p : { pFb, pInGain, pMix, pOut, pWidth }) knobs[(size_t) p]->setVisible (echo);
         for (int p : { pMode, pTrans }) choices[(size_t) p]->setVisible (echo);
-        for (int p : { pSync, pFbInv, pFreeze, pInDry, pPosDry, pOn }) toggles[(size_t) p]->setVisible (echo);
+        for (int p : { pSync, pFbInv, pFreeze, pFbStable, pInDry, pPosDry, pOn }) toggles[(size_t) p]->setVisible (echo);
         linkToggle->setVisible (echo);
         echoDisplay.setVisible (echo);
         filterGraph.setVisible (echo);
