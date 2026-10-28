@@ -1264,6 +1264,37 @@ void testAuditFixes()
         check (ph <= 2.0f, "K-f: Notbremse auch bei Limiter nur auf die Echos (" + std::to_string (toDb (ph)) + " dBFS)");
     }
 
+    // K-C2: Input Gain unter 0 dB macht die Saettigung in der Schleife schwaecher (gleicher Pegel in der Schleife)
+    {
+        auto h3 = [] (const Sig& o, double fs, size_t from, size_t len, double f0)
+        {
+            auto goertzel = [&] (double f)
+            {
+                double s1 = 0, s2 = 0;
+                const double c = 2.0 * std::cos (6.283185307179586 * f / fs);
+                for (size_t i = from; i < from + len; ++i) { const double s0 = o.l[i] + c * s1 - s2; s2 = s1; s1 = s0; }
+                return std::sqrt (s1 * s1 + s2 * s2 - c * s1 * s2);
+            };
+            return goertzel (3.0 * f0) / std::max (goertzel (f0), 1e-12);
+        };
+        const double f0 = 500.0;
+        auto run = [&] (float gainDb, float amp)
+        {
+            DelayUnit u; u.prepare (sr);
+            EchoSettings c = wetOnly();
+            c.timeL = 100.0f; c.feedback = 0.9f; c.inGainDb = gainDb;
+            auto in = makeSig ((size_t) (1.2 * sr));
+            for (size_t i = 0; i < (size_t) (0.08 * sr); ++i) in.l[i] = in.r[i] = amp * (float) std::sin (6.283185307179586 * f0 * (double) i / sr);
+            return runUnit (u, c, in, 512);
+        };
+        const auto at0 = run (0.0f, 0.6f), atMinus = run (-24.0f, 0.6f * dbToGain (24.0f));
+        const size_t echo5 = (size_t) (0.5 * sr) + 200, len = (size_t) (0.05 * sr);
+        const double d0 = h3 (at0, sr, echo5, len, f0), dm = h3 (atMinus, sr, echo5, len, f0);
+        std::cout << "  K-C2: k3 der 5. Wiederholung bei 0 dB " << toDb ((float) d0) << " dB, bei -24 dB " << toDb ((float) dm) << " dB" << std::endl;
+        check (dm < d0 * 0.1, "K-C2: -24 dB Input Gain: 5. Wiederholung mindestens 20 dB weniger Klirr als bei 0 dB (k3 "
+               + std::to_string (toDb ((float) d0)) + " -> " + std::to_string (toDb ((float) dm)) + " dB)");
+    }
+
     // A2/A3: bei konstanten Parametern ist der Ausgang unabhaengig von der Blockgroesse (auch 1, 441, wechselnd)
     {
         auto render = [] (const harness::Case& c, const Sig& in, double fs, const std::function<int (size_t)>& next)

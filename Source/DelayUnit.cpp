@@ -24,7 +24,7 @@ void DelayUnit::prepare (double sampleRate)
     hp1.setType (juce::dsp::FirstOrderTPTFilterType::highpass);
     lp1.setType (juce::dsp::FirstOrderTPTFilterType::lowpass);
 
-    for (auto* sm : { &inGainSm, &fbSm, &mixSm, &outSm, &widthSm, &driveSm }) sm->reset (sampleRate, 0.03);
+    for (auto* sm : { &inGainSm, &fbSm, &mixSm, &outSm, &widthSm, &driveSm, &kneeSm }) sm->reset (sampleRate, 0.03);
     depthSm.reset (sampleRate, 0.05);
     fDepthSm.reset (sampleRate, 0.05);
     freezeSm.reset (sampleRate, 0.05);
@@ -160,6 +160,7 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
         outSm.setCurrentAndTargetValue (outputGain (s));
         widthSm.setCurrentAndTargetValue (s.width);
         driveSm.setCurrentAndTargetValue (driveAmt);
+        kneeSm.setCurrentAndTargetValue (loopKneeOf (s.inGainDb));
         depthSm.setCurrentAndTargetValue (depthTarget);
         fDepthSm.setCurrentAndTargetValue (s.filterDepth);
         freezeSm.setCurrentAndTargetValue (frozen ? 1.0f : 0.0f);
@@ -173,6 +174,7 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
     outSm.setTargetValue (outputGain (s));
     widthSm.setTargetValue (s.width);
     driveSm.setTargetValue (driveAmt);
+    kneeSm.setTargetValue (loopKneeOf (s.inGainDb));
     depthSm.setTargetValue (depthTarget);
     fDepthSm.setTargetValue (s.filterDepth);
     freezeSm.setTargetValue (frozen ? 1.0f : 0.0f);
@@ -191,7 +193,7 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
         const double envDb = 20.0 * std::log10 (env + 1e-6);
         envMapped = (float) std::min (std::max ((envDb + 48.0) / 48.0, 0.0), 1.0);
 
-        frameSat = makeSatCoefs (driveSm.getCurrentValue());   // einmal pro Teilblock
+        frameSat = makeSatCoefs (driveSm.getCurrentValue(), kneeSm.getCurrentValue());   // einmal pro Teilblock
 
         // Filter-Cutoff inkl. Modulation, Resonanz geglaettet (hohe Guete springt sonst hoerbar)
         qSm[0] += (qHpTarget - qSm[0]) * qCoef;
@@ -340,6 +342,7 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
         if (framePos == kSub)
         {
             driveSm.skip (kSub);
+            kneeSm.skip (kSub);
             framePos = 0;
         }
     }

@@ -296,13 +296,23 @@ struct SatCoefs
     float k = 1.0f, comp = 1.0f, blend = 0.0f;
     // Schleifen-Saettigung (loopSat)
     float t = 1.0f, b = 0.0f, tb = 0.0f, norm = 1.0f;
+    // Input Gain unter 0 dB: linearer Bereich bis knee, darueber weich gegen 1,0 (0 = reiner tanh)
+    float knee = 0.0f, kneeRange = 1.0f;
 };
 
-inline SatCoefs makeSatCoefs (float drive)
+// Knie der Schleifen-Saettigung aus dem Input Gain: 0 dB und mehr = 0 (tanh wie bisher), -24 dB = 0,8 (sauber bis -1,9 dBFS)
+inline float loopKneeOf (float inGainDb) { return 0.8f * std::min (std::max (-inGainDb / 24.0f, 0.0f), 1.0f); }
+
+inline SatCoefs makeSatCoefs (float drive, float knee = 0.0f)
 {
     SatCoefs c;
     c.drive = drive;
-    if (drive <= 1.0e-4f) return c;
+    if (drive <= 1.0e-4f)
+    {
+        c.knee = knee > 1.0e-4f ? knee : 0.0f;
+        c.kneeRange = 1.0f - c.knee;
+        return c;
+    }
     constexpr float b0 = 0.12f, tb0 = 0.119427915f, n0 = 0.985737f;   // tanh(b0), 1 - tanh(b0)^2
     c.k = 1.0f + drive * 2.5f;
     c.comp = 0.25f / ((std::tanh (0.25f * c.k + b0) - tb0) / n0);
@@ -324,7 +334,15 @@ inline float analogSat (float x, const SatCoefs& c)
 
 inline float loopSat (float x, const SatCoefs& c)
 {
-    if (c.drive <= 1.0e-4f) return std::tanh (x);
+    if (c.drive <= 1.0e-4f)
+    {
+        if (c.knee <= 0.0f) return std::tanh (x);
+        // schwaechere Saettigung (Input Gain unter 0 dB): bis zum Knie linear, darueber tanh-Uebergang zur Grenze 1,0
+        const float a = std::abs (x);
+        if (a <= c.knee) return x;
+        const float y = c.knee + c.kneeRange * std::tanh ((a - c.knee) / c.kneeRange);
+        return x < 0.0f ? -y : y;
+    }
     return c.t * (std::tanh (x / c.t + c.b) - c.tb) / c.norm;
 }
 

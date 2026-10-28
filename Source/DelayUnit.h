@@ -55,7 +55,7 @@ private:
     std::array<Line, 2> line;
     juce::dsp::StateVariableTPTFilter<float> hp, lp;      // 2. Ordnung mit Resonanz ...
     juce::dsp::FirstOrderTPTFilter<float> hp1, lp1;        // ... plus 1. Ordnung = 18 dB/Oktave
-    juce::SmoothedValue<float> inGainSm, fbSm, mixSm, outSm, widthSm, fDepthSm, driveSm, freezeSm;
+    juce::SmoothedValue<float> inGainSm, fbSm, mixSm, outSm, widthSm, fDepthSm, driveSm, kneeSm, freezeSm;
     juce::SmoothedValue<double> depthSm;   // Modulationstiefe in Samples: bestimmt den Lese-Index
     double lfoPos = 0.0;   // LFO-Position in Zyklen, fortlaufend
     // Huellkurve und Modulationsglaettung in double: bei 192 kHz sind die Koeffizienten ~1e-5, in float ungenau
