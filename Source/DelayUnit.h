@@ -2,6 +2,7 @@
 #include <juce_dsp/juce_dsp.h>
 #include "DelayLine.h"
 #include "DspTypes.h"
+#include "Oversampler.h"
 
 namespace qe
 {
@@ -72,6 +73,13 @@ private:
     std::atomic<float> lfoPub { 0.0f }, envPub { 0.0f }, modPub { 0.0f }, rateHzPub { 1.0f };
     std::atomic<double> posPub { 0.0 };
     int lastTransition = -1;
+    // Saettigungen mit doppelter Rate (nur unter 88,2 kHz): Input- und Schleifenpfad verzoegern dabei um osLatency,
+    // die Leitungen werden um genau so viel frueher gelesen; der Freeze-Pfad laeuft ueber eine exakte Verzoegerung
+    bool useOs = false;
+    double osLatency = 0.0;
+    std::array<Oversampler2x, 2> osX, osF;
+    std::array<LatencyDelay, 2> rDelay, xDelay;   // xDelay: Input-Pfad ohne Drive bleibt eine exakte Kopie
+    int xOsWarm = -1;                             // Input-Oversampling: -1 = aus (Drive 0), sonst Samples seit dem Einschalten
     int framePos = 0;                   // Position im 16er-Teilblock (Steuerraster), ueber Aufrufe hinweg
     SatCoefs frameSat;                  // Steuerwerte des laufenden Teilblocks
     bool frameHpOn = false, frameLpOn = false, frameHpPeak = false, frameLpPeak = false;

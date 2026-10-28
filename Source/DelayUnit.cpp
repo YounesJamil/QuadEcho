@@ -29,6 +29,8 @@ void DelayUnit::prepare (double sampleRate)
     fDepthSm.reset (sampleRate, 0.05);
     freezeSm.reset (sampleRate, 0.05);
 
+    useOs = sr < 88200.0;   // ab 88,2 kHz landen die staerksten Spiegelfrequenzen ohnehin ueber dem Hoerbereich
+    osLatency = useOs ? (double) Oversampler2x::kLatency : 0.0;
     rpCoef  = 1.0 - std::exp (-1.0 / (0.2 * sr));
     qCoef   = 1.0f - std::exp (-(float) kSub / (0.03f * (float) sr));   // Resonanz, pro Teilblock
     modCoef = 1.0 - std::exp (-1.0 / (0.004 * sr));
@@ -64,6 +66,11 @@ void DelayUnit::resetState()
     hp.reset(); lp.reset(); hp1.reset(); lp1.reset(); peakHp.reset(); peakLp.reset();
     lfoPos = 0.0; modSm[0] = modSm[1] = fModSm = 0.0; env = 0.0; envMapped = 0.0f;
     lastTransition = -1;
+    for (auto& o : osX) o.reset();
+    for (auto& o : osF) o.reset();
+    for (auto& d : rDelay) d.reset();
+    for (auto& d : xDelay) d.reset();
+    xOsWarm = -1;
     framePos = 0;
     initialised = false;
 }
@@ -73,9 +80,10 @@ float DelayUnit::readLine (Line& l, double modSamples, double target, int transi
     const double maxD = (double) (capacity - 8);
     auto clampD = [maxD] (double d) { return std::min (std::max (d, 2.0), maxD); };
     // liest die Hauptleitung und die Leitung ohne Feedback an derselben Stelle
-    auto read2 = [&l, &clampD, needFirst] (double d, float& f)
+    const double lat = osLatency;
+    auto read2 = [&l, &clampD, needFirst, lat] (double d, float& f)
     {
-        d = clampD (d);
+        d = clampD (d - lat);   // Oversampling verzoegert den Schleifeneingang um lat: entsprechend frueher lesen
         f = needFirst ? l.first.readHermite (d) : 0.0f;
         return l.dl.readHermite (d);
     };
@@ -274,9 +282,6 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
             else if (mode == MidSide) { x0 = 0.5f * (l + r) * inG; x1 = 0.5f * (l - r) * inG; }
             else                      { x0 = l * inG; x1 = r * inG; }
 
-            x0 = analogSat (x0, sat) * (1.0f - fz);
-            x1 = analogSat (x1, sat) * (1.0f - fz);
-
             float fe0 = 0.0f, fe1 = 0.0f;
             const float y0 = readLine (line[0], modSm[0] * depthNow, target[0], trans, fe0, needFirst, frozen);
             const float y1 = readLine (line[1], modSm[1] * depthNow, target[1], trans, fe1, needFirst, frozen);
@@ -289,13 +294,58 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
             if (lpOn) { f0 = lp1.processSample (0, lp.processSample (0, f0)); f1 = lp1.processSample (1, lp.processSample (1, f1)); }
             if (hpPeak) { f0 = peakHp.process (0, f0); f1 = peakHp.process (1, f1); }
             if (lpPeak) { f0 = peakLp.process (0, f0); f1 = peakLp.process (1, f1); }
-            f0 = loopSat (f0, sat);
-            f1 = loopSat (f1, sat);
+            float rr0 = r0, rr1 = r1;   // unveraenderter Loop fuer Freeze, zeitlich passend zu den Saettigungspfaden
+            if (useOs)
+            {
+                auto osIn = [&sat] (Oversampler2x& os, float v)
+                {
+                    float a, b;
+                    os.up (v, a, b);
+                    return os.down (analogSat (a, sat), analogSat (b, sat));
+                };
+                auto osLoop = [&sat] (Oversampler2x& os, float v)
+                {
+                    float a, b;
+                    os.up (v, a, b);
+                    return os.down (loopSat (a, sat), loopSat (b, sat));
+                };
+                // Ohne Drive keine Input-Saettigung: exakte Verzoegerung, der Oversampler ruht. Beim Aufdrehen
+                // laeuft er erst 48 Samples warm und wird dann ueber 32 Samples eingeblendet (der Drive selbst
+                // faehrt ueber 30 ms hoch, die Saettigung ist in dieser Zeit noch praktisch null).
+                float xs0 = xDelay[0].process (x0), xs1 = xDelay[1].process (x1);
+                if (sat.blend > 0.0f)
+                {
+                    if (xOsWarm < 0) { osX[0].reset(); osX[1].reset(); xOsWarm = 0; }
+                    const float o0 = osIn (osX[0], x0), o1 = osIn (osX[1], x1);
+                    if (xOsWarm >= 80) { xs0 = o0; xs1 = o1; }
+                    else
+                    {
+                        const float wgt = (float) std::max (0, xOsWarm - 48) / 32.0f;
+                        xs0 += (o0 - xs0) * wgt;
+                        xs1 += (o1 - xs1) * wgt;
+                        ++xOsWarm;
+                    }
+                }
+                else xOsWarm = -1;
+                x0 = xs0 * (1.0f - fz);
+                x1 = xs1 * (1.0f - fz);
+                f0 = osLoop (osF[0], f0);
+                f1 = osLoop (osF[1], f1);
+                rr0 = rDelay[0].process (r0);
+                rr1 = rDelay[1].process (r1);
+            }
+            else
+            {
+                x0 = analogSat (x0, sat) * (1.0f - fz);
+                x1 = analogSat (x1, sat) * (1.0f - fz);
+                f0 = loopSat (f0, sat);
+                f1 = loopSat (f1, sat);
+            }
             float fbNow = fb;
             if (fz > 0.0f)
             {
-                f0 += (r0 - f0) * fz;
-                f1 += (r1 - f1) * fz;
+                f0 += (rr0 - f0) * fz;
+                f1 += (rr1 - f1) * fz;
                 fbNow += (fbSign - fb) * fz;
             }
             float w0 = x0 + fbNow * f0, w1 = x1 + fbNow * f1;

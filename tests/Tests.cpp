@@ -1295,6 +1295,41 @@ void testAuditFixes()
                + std::to_string (toDb ((float) d0)) + " -> " + std::to_string (toDb ((float) dm)) + " dB)");
     }
 
+    // K-c: Saettigung mit doppelter Rate: kaum noch Spiegelfrequenzen (48 kHz, 7-kHz-Sinus, Drive +12 dB, erstes Echo und 3. Wiederholung)
+    {
+        const double f0 = 7000.0;
+        DelayUnit u; u.prepare (sr);
+        EchoSettings c = wetOnly();
+        c.timeL = 300.0f; c.feedback = 0.7f; c.inGainDb = 12.0f;
+        auto in = makeSig ((size_t) (1.4 * sr));
+        for (size_t i = 0; i < (size_t) (0.25 * sr); ++i) in.l[i] = in.r[i] = 0.1f * (float) std::sin (6.283185307179586 * f0 * (double) i / sr);
+        const auto o = runUnit (u, c, in, 512);
+        auto level = [&] (size_t from, size_t len, double f)
+        {
+            double s1 = 0, s2 = 0;
+            const double cc = 2.0 * std::cos (6.283185307179586 * f / sr);
+            for (size_t i = 0; i < len; ++i)
+            {
+                const double w = 0.5 - 0.5 * std::cos (6.283185307179586 * (double) i / (double) len);
+                const double s0 = w * o.l[from + i] + cc * s1 - s2; s2 = s1; s1 = s0;
+            }
+            return s1 * s1 + s2 * s2 - cc * s1 * s2;
+        };
+        for (int echo : { 1, 3 })
+        {
+            const size_t from = (size_t) ((0.3 * echo + 0.05) * sr), len = (size_t) (0.15 * sr);
+            double alias = 0.0;
+            for (int h = 4; h <= 13; ++h)
+            {
+                const double fh = h * f0, folded = std::abs (std::fmod (fh + sr / 2, sr) - sr / 2);
+                alias += level (from, len, folded);
+            }
+            const double dbc = 10.0 * std::log10 (alias / level (from, len, f0));
+            std::cout << "  K-c: Aliasing Echo " << echo << ": " << dbc << " dBc" << std::endl;
+            check (dbc < -60.0, "K-c: Aliasing im Echo " + std::to_string (echo) + " unter -60 dBc (" + std::to_string (dbc) + ")");
+        }
+    }
+
     // A2/A3: bei konstanten Parametern ist der Ausgang unabhaengig von der Blockgroesse (auch 1, 441, wechselnd)
     {
         auto render = [] (const harness::Case& c, const Sig& in, double fs, const std::function<int (size_t)>& next)
