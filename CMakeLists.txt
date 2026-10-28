@@ -74,7 +74,7 @@ target_link_libraries(QuadEcho PRIVATE
 
 # DSP-Tests und Offline-Renders (ohne Plugin-Host)
 juce_add_console_app(QuadEchoTests PRODUCT_NAME "QuadEchoTests")
-target_sources(QuadEchoTests PRIVATE tests/Tests.cpp tests/Harness.cpp ${QUADECHO_DSP_SOURCES})
+target_sources(QuadEchoTests PRIVATE tests/Tests.cpp tests/Harness.cpp tests/Audit.cpp ${QUADECHO_DSP_SOURCES})
 target_link_libraries(QuadEchoTests PRIVATE
     juce::juce_audio_formats
     juce::juce_dsp

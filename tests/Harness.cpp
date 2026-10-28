@@ -8,7 +8,7 @@
  #include <windows.h>
 #endif
 #include "Harness.h"
-#include "TestUtil.h"
+#include "HarnessCommon.h"
 #include <algorithm>
 #include <chrono>
 #include <fstream>
@@ -26,15 +26,8 @@
 
 using namespace qetest;
 
-namespace
+namespace harness
 {
-constexpr double kRates[] = { 44100.0, 48000.0, 96000.0, 192000.0 };
-constexpr int kBaselineBlock = 512;
-constexpr double kBaselineSeconds = 1.5;
-const char* const kStimNames[] = { "impulse", "sweep", "noise" };
-const char* const kModeNames[] = { "stereo", "pingpong", "midside" };
-const char* const kTransNames[] = { "repitch", "fade", "jump" };
-
 // ---------------------------------------------------------------------------
 // Anregungen: Impuls -6 dBFS bei Sample 64; exponentieller Sweep 20 Hz .. min(20 kHz, 0.45 fs) in 1 s bei -12 dBFS;
 // weisses Rauschen (L/R unabhaengig) 1 s bei -12 dBFS. Danach Stille fuer die Ausklingphase.
@@ -63,13 +56,6 @@ Sig stimulus (int kind, double sr)
     return s;
 }
 
-struct Case
-{
-    std::string name;
-    EngineSettings s;
-    Mutator mut;
-    double bpm = 120.0;
-};
 
 // Vier verschiedene Einheiten: A mit Drive, B mit HP, C mit LP + Boost, D moduliert. Feste Zeiten (keine Transition).
 EngineSettings algoBase (int algo, int mode)
@@ -567,7 +553,9 @@ int bench (double seconds, int runs)
     }
     return 0;
 }
-} // namespace
+} // namespace harness
+
+using namespace harness;
 
 int harnessMain (int argc, char** argv)
 {
@@ -578,6 +566,7 @@ int harnessMain (int argc, char** argv)
     if (cmd == "baseline-check" && arg.isNotEmpty()) return baselineCheck (file (arg), false);
     if (cmd == "manifest-check" && arg.isNotEmpty()) return baselineCheck (file (arg), true);
     if (cmd == "refdump" && arg.isNotEmpty())        return refDump (file (arg));
+    if (cmd == "audit")                              return auditMain (arg, argc > 4 ? file (argv[4]) : file ("audit-out"));
     if (cmd == "bench")                              return bench (arg.isNotEmpty() ? arg.getDoubleValue() : 20.0,
                                                                   argc > 4 ? juce::String (argv[4]).getIntValue() : 5);
     std::cout << "Aufruf: siehe tests/Harness.h" << std::endl;

@@ -12,6 +12,7 @@ Aenderungen waehrend des Renders. Einzige erlaubte Aenderung ist ein Sprung von 
 
 Eingabe: Ordner aus  QuadEchoTests --harness refdump <ordner>  (JSON + float32-Dateien, kanalweise hintereinander).
 Aufruf:  python tests/ref/delayunit_ref.py <ordner> [--sat tanh|linear] [--only r03] [--out ergebnis.tsv]
+         [--f32 "index;env;all"]   einzelne Zustaende wie im C++ in float rechnen: ordnet Abweichungen ihrer Ursache zu
 """
 import argparse
 import json
@@ -34,6 +35,21 @@ SYNC_NOTES, SYNC_TRIPLET, SYNC_DOTTED, SYNC_16TH = 0, 1, 2, 3
 SINE, TRIANGLE, SAWUP, SAWDOWN, SQUARE, SMOOTHRANDOM = range(6)
 M64 = (1 << 64) - 1
 HALF_PI = math.pi / 2
+F32_STATES = ("index", "cur", "env", "mod")
+
+
+def f32(x):
+    return float(np.float32(x))
+
+
+def ident(x):
+    return x
+
+
+def coef_f32(num, tau, sr):
+    """1.0f - std::exp (-num / (tau_f * (float) sr)), Schritt fuer Schritt in float wie im C++."""
+    t = f32(f32(tau) * f32(sr))
+    return f32(1.0 - f32(math.exp(f32(-f32(num) / t))))
 
 
 def clamp(v, lo, hi):
@@ -226,7 +242,9 @@ class Line:
 
 # ---- DelayUnit ------------------------------------------------------------------------------------------------
 class DelayUnitModel:
-    def __init__(self, sr, sat="tanh"):
+    def __init__(self, sr, sat="tanh", f32_states=()):
+        # f32_states: diese Zustaende wie im C++ auf float runden (Zuordnung der Abweichungen zu ihrer Ursache)
+        self.fi, self.fc, self.fe, self.fm = (f32 if k in f32_states else ident for k in F32_STATES)
         self.sr = sr
         cap = math.ceil(MAX_DELAY_S * sr) + math.ceil(0.05 * sr) + 16
         self.lines = [Line(cap), Line(cap)]
@@ -248,18 +266,26 @@ class DelayUnitModel:
         self.last_transition = -1
         self.initialised = False
         self.loop_sat = math.tanh if sat == "tanh" else (lambda x: x)
+        if "cur" in f32_states:
+            self.rp_coef = coef_f32(1.0, 0.2, sr)
+        if "env" in f32_states:
+            self.env_atk, self.env_rel = coef_f32(1.0, 0.005, sr), coef_f32(1.0, 0.15, sr)
+        if "mod" in f32_states:
+            self.mod_coef = coef_f32(1.0, 0.004, sr)
 
     def read_line(self, l, mod, target, transition):
         max_d = float(self.capacity - 8)
 
+        fi, fc = self.fi, self.fc
+
         def rd(d):
-            return l.read_hermite(min(max(d, 2.0), max_d))
+            return l.read_hermite(min(max(fi(d), 2.0), max_d))
 
         if not l.init:
             l.base_a = l.base_b = l.cur = target
             l.init = True
         if transition == REPITCH:
-            l.cur += (target - l.cur) * self.rp_coef
+            l.cur = fc(l.cur + fc(fc(target - l.cur) * self.rp_coef))
             l.base_a = l.cur
             l.fading = False
             return rd(l.base_a + mod)
@@ -292,13 +318,13 @@ class DelayUnitModel:
             self.last_transition = trans
 
         ms_l, ms_r = delay_times_ms(s, bpm)
-        target = (ms_l * sr / 1000.0, ms_r * sr / 1000.0)
+        target = (self.fi(ms_l * sr / 1000.0), self.fi(ms_r * sr / 1000.0))
         lfo_hz = (bpm / 60.0) / div_beats(s["lfoDiv"]) if s["lfoSync"] else s["rateHz"]
         lfo_inc = lfo_hz / sr
         phase_off = s["phaseDeg"] / 360.0
         f_phase_off = s["filterPhaseDeg"] / 360.0
         gate = 1.0 if s["lfoOn"] else 0.0
-        depth = s["delayDepth"] * 0.010 * (4.0 if s["x4"] else 1.0) * sr
+        depth = self.fi(s["delayDepth"] * 0.010 * (4.0 if s["x4"] else 1.0) * sr)
         fb_sign = -1.0 if s["fbInvert"] else 1.0
         q_lp_t = 0.7071 + s["res"] * s["res"] * 4.0
         q_hp_t = 0.7071 + s["hpRes"] * s["hpRes"] * 4.0
@@ -320,11 +346,12 @@ class DelayUnitModel:
         hp, lp, hp1, lp1, pk_hp, pk_lp = self.hp, self.lp, self.hp1, self.lp1, self.peak_hp, self.peak_lp
         line0, line1 = self.lines
         loop_sat = self.loop_sat
+        fi, fe, fm = self.fi, self.fe, self.fm
 
         for sub in range(0, n, KSUB):
             ln = min(KSUB, n - sub)
             env_db = 20.0 * math.log10(self.env + 1e-6)
-            self.env_mapped = clamp((env_db + 48.0) / 48.0, 0.0, 1.0)
+            self.env_mapped = fe(clamp((env_db + 48.0) / 48.0, 0.0, 1.0))
             self.q_sm[0] += (q_hp_t - self.q_sm[0]) * self.q_coef
             self.q_sm[1] += (q_lp_t - self.q_sm[1]) * self.q_coef
             q_hp, q_lp = self.q_sm
@@ -333,10 +360,10 @@ class DelayUnitModel:
             hp_peak = hp_on and self.boost_sm[0] > 0.05
             lp_peak = lp_on and self.boost_sm[1] > 0.05
             mod_f = clamp(self.f_mod_sm, -1.0, 1.0)
-            fm = 2.0 ** (mod_f * f_depth * 2.0)
+            fmul = 2.0 ** (mod_f * f_depth * 2.0)
             max_f = 0.45 * sr
             if hp_on:
-                fc = clamp(s["hpHz"] * fm, 20.0, max_f)
+                fc = clamp(s["hpHz"] * fmul, 20.0, max_f)
                 hp.set(sr, fc, q_hp)
                 hp1.set(sr, fc)
                 if hp_peak:
@@ -346,7 +373,7 @@ class DelayUnitModel:
             else:
                 hp.reset(); hp1.reset(); pk_hp.reset()
             if lp_on:
-                fc = clamp(s["lpHz"] * fm, 100.0, max_f)
+                fc = clamp(s["lpHz"] * fmul, 100.0, max_f)
                 lp.set(sr, fc, q_lp)
                 lp1.set(sr, fc)
                 if lp_peak:
@@ -361,19 +388,20 @@ class DelayUnitModel:
                 i = start_idx + sub + j
                 l, r = in_l[i], in_r[i]
                 a = max(abs(l), abs(r))
-                self.env += (self.env_atk if a > self.env else self.env_rel) * (a - self.env)
+                self.env = fe(self.env + fe((self.env_atk if a > self.env else self.env_rel) * fe(a - self.env)))
 
                 lp_ = self.lfo_pos
-                lfo0 = gate * lfo_wave(wave, lp_)
-                lfo1 = gate * lfo_wave(wave, lp_ + phase_off)
-                lfo_f = gate * lfo_wave(wave, lp_ + f_phase_off)
+                lfo0 = gate * fm(lfo_wave(wave, lp_))
+                lfo1 = gate * fm(lfo_wave(wave, lp_ + phase_off))
+                lfo_f = gate * fm(lfo_wave(wave, lp_ + f_phase_off))
                 self.lfo_pos = lp_ + lfo_inc
                 m0 = lfo0 * (1.0 - env_mix) + env_mapped * env_mix
                 m1 = lfo1 * (1.0 - env_mix) + env_mapped * env_mix
                 mf = lfo_f * (1.0 - env_mix) + env_mapped * env_mix
-                self.f_mod_sm += (mf - self.f_mod_sm) * self.mod_coef
-                self.mod_sm[0] += (m0 - self.mod_sm[0]) * self.mod_coef
-                self.mod_sm[1] += (m1 - self.mod_sm[1]) * self.mod_coef
+                m0, m1, mf = fm(m0), fm(m1), fm(mf)
+                self.f_mod_sm = fm(self.f_mod_sm + fm(fm(mf - self.f_mod_sm) * self.mod_coef))
+                self.mod_sm[0] = fm(self.mod_sm[0] + fm(fm(m0 - self.mod_sm[0]) * self.mod_coef))
+                self.mod_sm[1] = fm(self.mod_sm[1] + fm(fm(m1 - self.mod_sm[1]) * self.mod_coef))
 
                 if mode == PINGPONG:
                     x0, x1 = 0.5 * (l + r) * in_g, 0.0
@@ -382,8 +410,8 @@ class DelayUnitModel:
                 else:
                     x0, x1 = l * in_g, r * in_g
 
-                y0 = self.read_line(line0, self.mod_sm[0] * depth, target[0], trans)
-                y1 = self.read_line(line1, self.mod_sm[1] * depth, target[1], trans)
+                y0 = self.read_line(line0, fi(self.mod_sm[0] * depth), target[0], trans)
+                y1 = self.read_line(line1, fi(self.mod_sm[1] * depth), target[1], trans)
 
                 r0, r1 = (y1, y0) if mode == PINGPONG else (y0, y1)
                 f0, f1 = r0, r1
@@ -413,7 +441,7 @@ class DelayUnitModel:
                 wet_r[i] = (mid - side) * lvl * out_g
 
 
-def run_case(json_path, sat):
+def run_case(json_path, sat, f32_states=()):
     meta = json.loads(Path(json_path).read_text())
     base = str(json_path)[:-5]
     n, sr, block, bpm = meta["n"], meta["sr"], meta["block"], meta["bpm"]
@@ -421,7 +449,7 @@ def run_case(json_path, sat):
     c = np.fromfile(base + "_wet.f32", dtype=np.float32).astype(np.float64)
     in_l, in_r = x[:n].tolist(), x[n:].tolist()
     wet_l, wet_r = [0.0] * n, [0.0] * n
-    unit = DelayUnitModel(sr, sat)
+    unit = DelayUnitModel(sr, sat, f32_states)
     s = dict(meta["settings"])
     s.setdefault("mute", False)
     changes = sorted(meta.get("changes", []), key=lambda ch: ch["at"])
@@ -437,7 +465,7 @@ def run_case(json_path, sat):
     rms_ref = float(np.sqrt(np.mean(ref * ref)))
     k = int(np.argmax(np.abs(d)))
     return {
-        "name": meta["name"], "sr": int(sr), "sat": sat,
+        "name": meta["name"], "sr": int(sr), "sat": sat + ("+f32:" + ",".join(f32_states) if f32_states else ""),
         "peak_diff_dbfs": 20 * math.log10(peak_d) if peak_d > 0 else -math.inf,
         "rms_diff_dbfs": 20 * math.log10(rms_d) if rms_d > 0 else -math.inf,
         "signal_rms_dbfs": 20 * math.log10(rms_ref) if rms_ref > 0 else -math.inf,
@@ -451,10 +479,15 @@ def main():
     ap.add_argument("--sat", choices=["tanh", "linear", "both"], default="both")
     ap.add_argument("--only", default="")
     ap.add_argument("--out", default="")
+    ap.add_argument("--f32", default="", help="Zustaende wie im C++ auf float runden: index,cur,env,mod oder all; "
+                                             "mehrere Varianten mit ';' trennen, z. B. 'index;env;all'")
     a = ap.parse_args()
     files = sorted(p for p in Path(a.dir).glob("*.json") if a.only in p.name)
     sats = ["tanh", "linear"] if a.sat == "both" else [a.sat]
-    jobs = [(str(f), s) for s in sats for f in files]
+    variants = [()]
+    if a.f32:
+        variants = [tuple(F32_STATES) if v == "all" else tuple(x for x in v.split(",") if x) for v in a.f32.split(";")]
+    jobs = [(str(f), s, v) for v in variants for s in sats for f in files]
     with ProcessPoolExecutor(max_workers=max(1, (os.cpu_count() or 2) - 2)) as ex:
         results = list(ex.map(run_case, *zip(*jobs)))
     results.sort(key=lambda r: (r["sat"], r["name"], r["sr"]))
