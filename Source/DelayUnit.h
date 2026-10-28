@@ -1,0 +1,62 @@
+#pragma once
+#include <juce_dsp/juce_dsp.h>
+#include "DelayLine.h"
+#include "DspTypes.h"
+
+namespace qe
+{
+// Eine Echo-Einheit (Stereo rein/raus), ohne Raumplatzierung.
+// Ausgang = durchlaufendes Signal + Echos * Echo-Pegel, beides mit dem Output der Einheit.
+// origIn/origOut (optional): der reine Original-Anteil des Eingangs, nur durch den Dry-Weg dieser
+// Einheit geschickt (Gain on Dry, Output, Mute). Damit trennt die Engine am Ende Original und Echos.
+class DelayUnit
+{
+public:
+    void prepare (double sampleRate);
+    void reset();
+    void process (const float* inL, const float* inR, float* outL, float* outR,
+                  int n, const EchoSettings& s, double bpm,
+                  float* wetOutL = nullptr, float* wetOutR = nullptr,
+                  float* firstOutL = nullptr, float* firstOutR = nullptr,
+                  const float* origInL = nullptr, const float* origInR = nullptr,
+                  float* origOutL = nullptr, float* origOutR = nullptr);
+
+    // Fuer die UI (lockfrei): aktuelle Modulation
+    float getLfoValue() const { return lfoPub.load (std::memory_order_relaxed); }
+    float getEnvValue() const { return envPub.load (std::memory_order_relaxed); }
+    float getModValue() const { return modPub.load (std::memory_order_relaxed); }
+    double getLfoPos() const { return posPub.load (std::memory_order_relaxed); }   // fortlaufend, in Zyklen
+    float getLfoRateHz() const { return rateHzPub.load (std::memory_order_relaxed); }
+
+private:
+    struct Line
+    {
+        DelayLine dl;
+        DelayLine first;   // gleiche Verzoegerung ohne Feedback: nur das erste Echo
+        float baseA = 0.0f, baseB = 0.0f, cur = 0.0f;
+        bool fading = false, init = false;
+        int fadePos = 0, fadeLen = 1;
+    };
+
+    float readLine (Line& l, float modSamples, float target, int transition, float& first, bool needFirst, bool frozen);
+
+    double sr = 44100.0;
+    int capacity = 0;
+    std::array<Line, 2> line;
+    juce::dsp::StateVariableTPTFilter<float> hp, lp;      // 2. Ordnung mit Resonanz ...
+    juce::dsp::FirstOrderTPTFilter<float> hp1, lp1;        // ... plus 1. Ordnung = 18 dB/Oktave
+    juce::SmoothedValue<float> inGainSm, fbSm, mixSm, outSm, widthSm, depthSm, fDepthSm, driveSm, freezeSm;
+    double lfoPos = 0.0;   // LFO-Position in Zyklen, fortlaufend
+    float modSm[2] = { 0.0f, 0.0f };
+    float fModSm = 0.0f;
+    float env = 0.0f, envMapped = 0.0f;
+    float rpCoef = 0.001f, modCoef = 0.01f, envAtk = 0.01f, envRel = 0.001f, qCoef = 0.03f;
+    float qSm[2] = { 0.8f, 0.8f };   // geglaettete Guete HP, LP
+    float boostSm[2] = { 0.0f, 0.0f };   // geglaetteter Boost HP, LP (dB)
+    PeakEq peakHp, peakLp;              // Glocke an der Grenzfrequenz
+    std::atomic<float> lfoPub { 0.0f }, envPub { 0.0f }, modPub { 0.0f }, rateHzPub { 1.0f };
+    std::atomic<double> posPub { 0.0 };
+    int lastTransition = -1;
+    bool initialised = false;
+};
+} // namespace qe

@@ -1,0 +1,5 @@
+{
+  "cmake.configureOnOpen": false,
+  "cmake.buildDirectory": "Q:/QuadEcho/build",
+  "cmake.generator": "Visual Studio 18 2026"
+}
