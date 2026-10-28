@@ -1,13 +1,12 @@
 # Baut QUAD ECHO fuer Windows und macOS, prueft es (DSP-Tests, pluginval) und stellt die Dateien bereit.
-# Bei jedem Push: Downloads unter "Actions" > Lauf > "Artifacts".
-# Bei einem Versions-Tag (z. B. git tag v0.2.0 && git push --tags): zusaetzlich ein GitHub-Release mit den Zips.
+# Starten: auf GitHub unter "Actions" > "Build" > "Run workflow" (Downloads danach im Lauf unter "Artifacts").
+# Bei einem Versions-Tag (z. B. git tag v0.2.0 && git push --tags) laeuft er von selbst und legt ein
+# GitHub-Release mit den Zips an. Nicht bei jedem Push: Mac-Minuten zaehlen bei privaten Repos 10-fach.
 name: Build
 
 on:
   push:
-    branches: [ "**" ]
     tags: [ "v*" ]
-  pull_request:
   workflow_dispatch:
 
 permissions:

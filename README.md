@@ -6,7 +6,7 @@ VST3-Plugin, AU (Mac) und Standalone-App für **Windows und macOS** (JUCE 9.0.4,
 
 ## Bauen
 
-**Automatisch (Windows und Mac):** Bei jedem Push baut GitHub Actions ([.github/workflows/build.yml](.github/workflows/build.yml)) beide Systeme, lässt die DSP-Tests und pluginval (Strictness 10) laufen, prüft das AU mit `auval` und stellt `QUAD-ECHO-Windows.zip` und `QUAD-ECHO-macOS.zip` bereit (Actions → Lauf → Artifacts). Mac: Universal Binary (Apple Silicon + Intel), ab macOS 11, ad hoc signiert (ohne Apple-Konto). Ein Versions-Tag (`git tag v0.2.0` und `git push --tags`) legt zusätzlich ein GitHub-Release mit beiden Zips an.
+**Automatisch (Windows und Mac):** Auf Knopfdruck (GitHub → Actions → Build → „Run workflow") baut GitHub Actions ([.github/workflows/build.yml](.github/workflows/build.yml)) beide Systeme, lässt die DSP-Tests und pluginval (Strictness 10) laufen, prüft das AU mit `auval` und stellt `QUAD-ECHO-Windows.zip` und `QUAD-ECHO-macOS.zip` bereit (Actions → Lauf → Artifacts). Mac: Universal Binary (Apple Silicon + Intel), ab macOS 11, ad hoc signiert (ohne Apple-Konto). Ein Versions-Tag (`git tag v0.2.0` und `git push --tags`) legt zusätzlich ein GitHub-Release mit beiden Zips an.
 
 **Lokal unter Windows:** Visual Studio 2026 (oder Build Tools mit C++), CMake >= 3.22, Git, Internet beim ersten Konfigurieren (JUCE wird per FetchContent geholt).
 
