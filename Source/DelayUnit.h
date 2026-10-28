@@ -66,6 +66,9 @@ private:
     std::atomic<float> lfoPub { 0.0f }, envPub { 0.0f }, modPub { 0.0f }, rateHzPub { 1.0f };
     std::atomic<double> posPub { 0.0 };
     int lastTransition = -1;
+    int framePos = 0;                   // Position im 16er-Teilblock (Steuerraster), ueber Aufrufe hinweg
+    SatCoefs frameSat;                  // Steuerwerte des laufenden Teilblocks
+    bool frameHpOn = false, frameLpOn = false, frameHpPeak = false, frameLpPeak = false;
     bool initialised = false;
     bool poisoned = false;   // ein Schleifen-Sample war nicht endlich: am Blockende neu aufsetzen
 };

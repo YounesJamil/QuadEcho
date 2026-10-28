@@ -18,10 +18,11 @@ public:
     void prepare (double sampleRate);
     void reset();
     void resetInstance (int inst);
-    // einmal pro Chunk (n <= 256): schreitet den LFO fuer alle 16-Sample-Bloecke weiter
+    // einmal pro Chunk (n <= 256): schreitet den LFO fuer alle 16-Sample-Bloecke weiter. Die Bloecke liegen an der
+    // absoluten Sample-Position; ein angefangener Block aus dem letzten Chunk wird mit seinen Werten zu Ende gefuehrt.
     void beginChunk (const GlobalFilterSettings& s, double bpm, int n);
     bool active() const { return cur.hpOn || cur.lpOn; }
-    // verarbeitet einen Chunk-Anfang-ausgerichteten Block (n Samples) in-place
+    // verarbeitet den Chunk (n Samples, wie bei beginChunk) in-place
     void process (int inst, float* l, float* r, int n);
 
 private:
@@ -43,5 +44,9 @@ private:
     std::array<std::array<float, 20>, 2> qBlocks {};          // je 16er-Block: Guete HP, LP
     std::array<float, 2> boostS { { 0.0f, 0.0f } };           // geglaetteter Boost HP, LP (dB)
     std::array<std::array<float, 20>, 2> boostBlocks {};      // je 16er-Block: Boost HP, LP
+    std::array<int, 20> segStart {}, segLen {};               // Lage der Bloecke im Chunk
+    int numSegs = 0;
+    int framePos = 0;                                         // Position im 16er-Raster am Chunk-Anfang
+    int prevLastSeg = -1;                                     // letzter Block des vorigen Chunks
 };
 } // namespace qe

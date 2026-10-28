@@ -35,5 +35,8 @@ private:
     PeakEq peakHp, peakLp;             // Glocke an der Grenzfrequenz
     float fModS = 0.0f, env = 0.0f, envMapped = 0.0f, envAtk = 0.01f, envRel = 0.001f;
     bool initialised = false;
+    int framePos = 0;   // Position im 16er-Teilblock (Steuerraster), ueber Aufrufe hinweg
+    float frameTrem = 1.0f;
+    bool frameHpOn = false, frameLpOn = false, frameHpPeak = false, frameLpPeak = false;
 };
 } // namespace qe

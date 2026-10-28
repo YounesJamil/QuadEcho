@@ -64,6 +64,10 @@ private:
     Biquad peak[2];
     Shadow shadow[2];
     float gPrev[2] = { 1.0f, 1.0f };
+    int framePos = 0;   // Position im 16er-Teilblock (Steuerraster), ueber Aufrufe hinweg
+    // Steuerwerte des laufenden Teilblocks
+    float fG[2] = { 1.0f, 1.0f }, fDly[2] = { 0.0f, 0.0f }, fLpA[2] = { 0.0f, 0.0f };
+    float fWDist = 1.0f, fGDist = 1.0f, fDistDelay = 0.0f, fErAmt = 0.0f;
     bool initialised = false;
 };
 } // namespace qe

@@ -28,6 +28,9 @@ void GlobalFilter::reset()
     boostS = { { 0.0f, 0.0f } };
     cur = GlobalFilterSettings();
     for (auto& f : fmBlocks) f.fill (1.0f);
+    numSegs = 0;
+    framePos = 0;
+    prevLastSeg = -1;
 }
 
 void GlobalFilter::resetInstance (int inst)
@@ -45,12 +48,30 @@ void GlobalFilter::beginChunk (const GlobalFilterSettings& s, double bpm, int n)
 {
     cur = s;
     const double hz = s.lfoSync ? (bpm / 60.0) / divBeatsOf (s.lfoDiv) : (double) s.rateHz;
-    const int blocks = std::min ((int) fmBlocks[0].size(), (n + 15) / 16);
     const float offR = s.phaseDeg / 360.0f;   // rechter Kanal versetzt
     const float qTarget[2] = { 0.7071f + s.hpRes * s.hpRes * 4.0f, 0.7071f + s.res * s.res * 4.0f };
     const float qCoef = 1.0f - std::exp (-16.0f / (0.03f * (float) sr));   // Resonanz geglaettet, ca. 30 ms
-    for (int b = 0; b < blocks; ++b)
+    numSegs = 0;
+    int pos = 0;
+    if (framePos != 0)   // angefangener Block: Werte des letzten Blocks (Index numSegs-1 des vorigen Chunks) weiter verwenden
     {
+        const int last = std::max (prevLastSeg, 0);
+        for (int c = 0; c < 2; ++c)
+        {
+            fmBlocks[(size_t) c][0] = fmBlocks[(size_t) c][(size_t) last];
+            qBlocks[(size_t) c][0] = qBlocks[(size_t) c][(size_t) last];
+            boostBlocks[(size_t) c][0] = boostBlocks[(size_t) c][(size_t) last];
+        }
+        segStart[0] = 0;
+        segLen[0] = std::min (16 - framePos, n);
+        numSegs = 1;
+        pos = segLen[0];
+    }
+    for (; pos < n && numSegs < (int) segStart.size(); pos += 16)
+    {
+        const int b = numSegs++;
+        segStart[(size_t) b] = pos;
+        segLen[(size_t) b] = std::min (16, n - pos);
         for (int k = 0; k < 2; ++k)
         {
             qS[(size_t) k] = qS[(size_t) k] < 0.0f ? qTarget[k] : qS[(size_t) k] + (qTarget[k] - qS[(size_t) k]) * qCoef;
@@ -67,6 +88,8 @@ void GlobalFilter::beginChunk (const GlobalFilterSettings& s, double bpm, int n)
             fmBlocks[(size_t) c][(size_t) b] = std::exp2 (modS[(size_t) c] * s.depth * 2.0f);
         }
     }
+    prevLastSeg = numSegs - 1;
+    framePos = (framePos + n) % 16;
 }
 
 void GlobalFilter::process (int inst, float* l, float* r, int n)
@@ -76,10 +99,12 @@ void GlobalFilter::process (int inst, float* l, float* r, int n)
     const float maxF = 0.45f * (float) sr;
     float* ch[2] = { l, r };
 
-    for (int start = 0, b = 0; start < n; start += 16, ++b)
+    for (int b = 0; b < numSegs; ++b)
     {
-        const int len = std::min (16, n - start);
-        const auto bi = (size_t) std::min (b, (int) fmBlocks[0].size() - 1);
+        const int start = segStart[(size_t) b];
+        const int len = std::min (segLen[(size_t) b], n - start);
+        if (len <= 0) break;
+        const auto bi = (size_t) b;
         for (int c = 0; c < 2; ++c)
         {
             const auto cc = (size_t) c;

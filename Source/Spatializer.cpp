@@ -52,6 +52,7 @@ void Spatializer::reset()
     peak[0] = Biquad(); peak[1] = Biquad();
     shadow[0] = Shadow(); shadow[1] = Shadow();
     gPrev[0] = gPrev[1] = 1.0f;
+    framePos = 0;
     initialised = false;
 }
 
@@ -90,26 +91,30 @@ void Spatializer::process (float* l, float* r, int n, const PosSettings& p, cons
     const float dopplerAmt = clampf (o.doppler, 0.0f, 2.0f);
     const float maxDelay = (float) dl[0].capacity() - 8.0f;
 
-    for (int start = 0; start < n; start += kSub)
+    // Steuerwerte je 16 Samples an der absoluten Sample-Position: ein Aufruf, der mitten in einem Teilblock beginnt,
+    // fuehrt ihn mit dessen Werten zu Ende (unabhaengig von der Blockgroesse des Hosts)
+    for (int start = 0; start < n;)
     {
-        const int len = std::min (kSub, n - start);
-
-        const float x = xSm.getNextValue(); xSm.skip (len - 1);
-        const float y = ySm.getNextValue(); ySm.skip (len - 1);
-        const float z = zSm.getNextValue(); zSm.skip (len - 1);
-        const float dOn = distOnSm.getNextValue(); distOnSm.skip (len - 1);
-        const float bm = binSm.getNextValue(); binSm.skip (len - 1);
+        const int len = std::min (kSub - framePos, n - start);
+        if (framePos == 0)
+        {
+        const float x = xSm.getNextValue(); xSm.skip (kSub - 1);
+        const float y = ySm.getNextValue(); ySm.skip (kSub - 1);
+        const float z = zSm.getNextValue(); zSm.skip (kSub - 1);
+        const float dOn = distOnSm.getNextValue(); distOnSm.skip (kSub - 1);
+        const float bm = binSm.getNextValue(); binSm.skip (kSub - 1);
 
         // ---- Geometrie: Radius -> Distanz in Metern (Mindestabstand 1 m) ----
         const float radius = std::min (std::sqrt (x * x + y * y), 1.41421356f);
         const float d = distanceMeters (radius);
         const float gDist = 1.0f / d;
+        fGDist = gDist;
         const float azimuth = radius > 1e-4f ? std::atan2 (x, y) : 0.0f;       // 0 = vorne, +90 Grad = rechts
         const float elevation = z * 0.7853982f;                                 // +-45 Grad
         const float rearW = std::max (0.0f, -std::cos (azimuth)) * std::min (1.0f, radius * 3.0f);
 
         // Stereo breite sinkt mit Distanz
-        const float wDist = 1.0f / (1.0f + 0.2f * (d - 1.0f));
+        fWDist = 1.0f / (1.0f + 0.2f * (d - 1.0f));
 
         // Luftabsorption
         const float fcAir = 20000.0f / (1.0f + 0.9f * (d - 1.0f));
@@ -139,24 +144,23 @@ void Spatializer::process (float* l, float* r, int n, const PosSettings& p, cons
         const float fcRearB = fcAir * (1.0f - 0.78f * rearW);
 
         // ---- Mischung der Modi (weich beim Umschalten) ----
-        float g[2], dly[2], aw[2], fc[2];
+        float aw[2], fc[2];
         for (int c = 0; c < 2; ++c)
         {
-            g[c] = lerp (gS[c], gB[c], bm);
-            dly[c] = lerp (dS[c], dB[c], bm);
+            fG[c] = lerp (gS[c], gB[c], bm);
+            fDly[c] = lerp (dS[c], dB[c], bm);
             aw[c] = lerp (awS[c], awB[c], bm);
             fc[c] = std::exp (lerp (std::log (fcS[c]), std::log (fcRearB), bm));
         }
 
         // Entfernungs-Laufzeit mit Doppler: langsam nachgefuehrte Referenz, Aenderungen skaliert
         if (dRef < 0.0f) dRef = d;
-        dRef += (d - dRef) * (1.0f - std::exp (-(float) len / (2.0f * fs)));
+        dRef += (d - dRef) * (1.0f - std::exp (-(float) kSub / (2.0f * fs)));
         const float meters = std::max (0.0f, dRef + dopplerAmt * (d - dRef));
-        const float distDelay = dOn * (meters / kSpeedOfSound) * fs;
+        fDistDelay = dOn * (meters / kSpeedOfSound) * fs;
 
-        float lpA[2];
         for (int c = 0; c < 2; ++c)
-            lpA[c] = std::exp (-2.0f * kPi * std::min (fc[c], 0.45f * fs) / fs);
+            fLpA[c] = std::exp (-2.0f * kPi * std::min (fc[c], 0.45f * fs) / fs);
 
         // Kopfschatten-Filter (1. Ordnung, bilinear)
         {
@@ -176,15 +180,20 @@ void Spatializer::process (float* l, float* r, int n, const PosSettings& p, cons
         setPeak (peak[1], fz, 5.0f * z, 1.5f);
 
         // Fruehe Reflexionen (Anteil steigt mit Distanz)
-        const float erAmt = o.earlyReflections ? 0.35f * clampf ((d - 1.0f) / 3.0f, 0.0f, 1.0f) : 0.0f;
+        fErAmt = o.earlyReflections ? 0.35f * clampf ((d - 1.0f) / 3.0f, 0.0f, 1.0f) : 0.0f;
+        }
         const float erA = std::exp (-2.0f * kPi * 5000.0f / fs);
         const float erTap[3] = { 0.0053f * fs, 0.0089f * fs, 0.0131f * fs };
         const float erGain[3] = { 1.0f, 0.75f, 0.55f };
+        const float* g = fG;
+        const float* dly = fDly;
+        const float* lpA = fLpA;
+        const float wDist = fWDist, gDist = fGDist, distDelay = fDistDelay, erAmt = fErAmt;
 
         for (int j = 0; j < len; ++j)
         {
             const int i = start + j;
-            const float t = (float) (j + 1) / (float) len;
+            const float t = (float) (framePos + j + 1) / (float) kSub;
             const float gl = gPrev[0] + (g[0] - gPrev[0]) * t;
             const float gr = gPrev[1] + (g[1] - gPrev[1]) * t;
 
@@ -220,8 +229,14 @@ void Spatializer::process (float* l, float* r, int n, const PosSettings& p, cons
             l[i] = l3;
             r[i] = r3;
         }
-        gPrev[0] = g[0];
-        gPrev[1] = g[1];
+        start += len;
+        framePos += len;
+        if (framePos == kSub)
+        {
+            gPrev[0] = g[0];
+            gPrev[1] = g[1];
+            framePos = 0;
+        }
     }
 }
 } // namespace qe

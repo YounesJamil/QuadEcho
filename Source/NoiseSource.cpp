@@ -62,6 +62,7 @@ void NoiseSource::reset()
     crk[0] = crk[1] = 0.0f;
     hp.reset(); lp.reset(); hp1.reset(); lp1.reset(); peakHp.reset(); peakLp.reset();
     phase = 0.0;
+    framePos = 0;
     fModS = env = envMapped = 0.0f;
     qSm[0] = qSm[1] = -1.0f;
     initialised = false;
@@ -78,6 +79,7 @@ void NoiseSource::process (float* outL, float* outR, int n, const NoiseSettings&
     {
         std::fill (outL, outL + n, 0.0f);
         std::fill (outR, outR + n, 0.0f);
+        framePos = (framePos + n) % kSub;   // Raster laeuft weiter
         hp.reset(); lp.reset(); hp1.reset(); lp1.reset(); peakHp.reset(); peakLp.reset();
         return;
     }
@@ -93,10 +95,12 @@ void NoiseSource::process (float* outL, float* outR, int n, const NoiseSettings&
     const float crkAmt = s.crackle * 1.6f;
     const float maxF = 0.45f * fs;
 
-    for (int start = 0; start < n; start += kSub)
+    // Steuerwerte je 16 Samples an der absoluten Sample-Position (wie DelayUnit): unabhaengig von der Blockgroesse
+    for (int start = 0; start < n;)
     {
-        const int len = std::min (kSub, n - start);
-
+        const int len = std::min (kSub - framePos, n - start);
+        if (framePos == 0)
+        {
         // Hüllkurve des Eingangs (dB-Skala) und LFO pro Teilblock
         const float envDb = 20.0f * std::log10 (env + 1e-6f);
         envMapped = std::min (std::max ((envDb + 48.0f) / 48.0f, 0.0f), 1.0f);
@@ -107,14 +111,18 @@ void NoiseSource::process (float* outL, float* outR, int n, const NoiseSettings&
         const float mF = lfoF * (1.0f - s.envMix) + envMapped * s.envMix;
         fModS += (mF - fModS) * 0.25f;
         const float u = lfoLevelU * (1.0f - s.envMix) + envMapped * s.envMix;
-        const float trem = 1.0f - s.depthL * (1.0f - u);
+        frameTrem = 1.0f - s.depthL * (1.0f - u);
         const float fm = std::exp2 (fModS * s.depthF * 2.0f);
         qSm[0] += (qHpTarget - qSm[0]) * qCoef;
         qSm[1] += (qLpTarget - qSm[1]) * qCoef;
         const float qHp = qSm[0], qLp = qSm[1];
         boostSm[0] += (s.hpBoost - boostSm[0]) * qCoef;
         boostSm[1] += (s.lpBoost - boostSm[1]) * qCoef;
-        const bool hpPeak = s.hpOn && boostSm[0] > kBoostOffDb, lpPeak = s.lpOn && boostSm[1] > kBoostOffDb;
+        frameHpOn = s.hpOn;
+        frameLpOn = s.lpOn;
+        frameHpPeak = s.hpOn && boostSm[0] > kBoostOffDb;
+        frameLpPeak = s.lpOn && boostSm[1] > kBoostOffDb;
+        const bool hpPeak = frameHpPeak, lpPeak = frameLpPeak;
 
         if (s.hpOn)
         {
@@ -130,6 +138,9 @@ void NoiseSource::process (float* outL, float* outR, int n, const NoiseSettings&
             if (lpPeak) peakLp.set (sr, fc, qLp, boostSm[1]); else peakLp.reset();
         }
         else { lp.reset(); lp1.reset(); peakLp.reset(); }
+        }
+        const float trem = frameTrem;
+        const bool hpOn = frameHpOn, lpOn = frameLpOn, hpPeak = frameHpPeak, lpPeak = frameLpPeak;
 
         for (int j = 0; j < len; ++j)
         {
@@ -155,8 +166,8 @@ void NoiseSource::process (float* outL, float* outR, int n, const NoiseSettings&
             nl += crkAmt * crk[0];
             nr += crkAmt * crk[1];
 
-            if (s.hpOn) { nl = hp1.processSample (0, hp.processSample (0, nl)); nr = hp1.processSample (1, hp.processSample (1, nr)); }
-            if (s.lpOn) { nl = lp1.processSample (0, lp.processSample (0, nl)); nr = lp1.processSample (1, lp.processSample (1, nr)); }
+            if (hpOn) { nl = hp1.processSample (0, hp.processSample (0, nl)); nr = hp1.processSample (1, hp.processSample (1, nr)); }
+            if (lpOn) { nl = lp1.processSample (0, lp.processSample (0, nl)); nr = lp1.processSample (1, lp.processSample (1, nr)); }
             if (hpPeak) { nl = peakHp.process (0, nl); nr = peakHp.process (1, nr); }
             if (lpPeak) { nl = peakLp.process (0, nl); nr = peakLp.process (1, nr); }
 
@@ -164,6 +175,8 @@ void NoiseSource::process (float* outL, float* outR, int n, const NoiseSettings&
             outL[i] = nl * g;
             outR[i] = nr * g;
         }
+        start += len;
+        framePos = (framePos + len) % kSub;
     }
 }
 } // namespace qe

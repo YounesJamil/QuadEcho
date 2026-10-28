@@ -1147,6 +1147,44 @@ void testAuditFixes()
         check (median <= 0.0 || third < 6.0 * median, "B1: Einheit aus kostet hoechstens 6 x Median-Block (drittgroesster Block "
                + std::to_string (third / std::max (median, 1.0)) + " x)");
     }
+
+    // A2/A3: bei konstanten Parametern ist der Ausgang unabhaengig von der Blockgroesse (auch 1, 441, wechselnd)
+    {
+        auto render = [] (const harness::Case& c, const Sig& in, double fs, const std::function<int (size_t)>& next)
+        {
+            QuadEngine e; e.prepare (fs);
+            Sig out = in;
+            size_t pos = 0, k = 0;
+            while (pos < in.l.size())
+            {
+                const int len = (int) std::min<size_t> ((size_t) next (k++), in.l.size() - pos);
+                e.process (out.l.data() + pos, out.r.data() + pos, len, c.s, c.bpm);
+                pos += (size_t) len;
+            }
+            return out;
+        };
+        for (double fs : { 48000.0, 192000.0 })
+            for (const auto& c : harness::baselineCases (fs))
+            {
+                if (c.mut) continue;   // Automation greift am Blockanfang, ist also nicht blockgroessen-unabhaengig
+                const auto in = harness::stimulus (2, fs);
+                const auto ref = render (c, in, fs, [] (size_t) { return 512; });
+                for (int cfg = 0; cfg < 3; ++cfg)
+                {
+                    const auto out = render (c, in, fs, [cfg] (size_t k) {
+                        if (cfg == 0) return 1;
+                        if (cfg == 1) return 441;
+                        juce::Random r ((juce::int64) (k * 7919 + 5)); return 1 + r.nextInt (1024); });
+                    const bool same = std::memcmp (ref.l.data(), out.l.data(), ref.l.size() * sizeof (float)) == 0
+                                   && std::memcmp (ref.r.data(), out.r.data(), ref.r.size() * sizeof (float)) == 0;
+                    if (! same)
+                        check (false, "A3: " + c.name + " bei " + std::to_string ((int) fs) + " Hz, Block "
+                                      + (cfg == 0 ? "1" : (cfg == 1 ? "441" : "wechselnd")) + " nicht bitgenau gleich Block 512");
+                    else
+                        check (true, "");
+                }
+            }
+    }
 }
 
 void benchmark()

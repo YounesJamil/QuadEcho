@@ -65,6 +65,7 @@ void DelayUnit::resetState()
     hp.reset(); lp.reset(); hp1.reset(); lp1.reset(); peakHp.reset(); peakLp.reset();
     lfoPos = 0.0; modSm[0] = modSm[1] = fModSm = 0.0f; env = envMapped = 0.0f;
     lastTransition = -1;
+    framePos = 0;
     initialised = false;
 }
 
@@ -177,16 +178,21 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
     fDepthSm.setTargetValue (s.filterDepth);
     freezeSm.setTargetValue (frozen ? 1.0f : 0.0f);
 
-    for (int start = 0; start < n; start += kSub)
-    {
-        const int len = std::min (kSub, n - start);
+    const bool needFirst = firstOutL != nullptr;
 
+    // Steuerwerte (Filter, Huellkurve, Saettigung) je 16 Samples, an der absoluten Sample-Position ausgerichtet:
+    // ein Aufruf, der mitten in einem Teilblock beginnt, fuehrt ihn mit den Werten von dessen Anfang zu Ende.
+    // So haengt der Ausgang nicht von der Blockgroesse des Hosts ab.
+    for (int start = 0; start < n;)
+    {
+        const int len = std::min (kSub - framePos, n - start);
+        if (framePos == 0)
+        {
         // Envelope -> 0..1 (dB-Skala), pro Teilblock
         const float envDb = 20.0f * std::log10 (env + 1e-6f);
         envMapped = std::min (std::max ((envDb + 48.0f) / 48.0f, 0.0f), 1.0f);
 
-        const SatCoefs sat = makeSatCoefs (driveSm.getCurrentValue());   // einmal pro Teilblock
-        const bool needFirst = firstOutL != nullptr;
+        frameSat = makeSatCoefs (driveSm.getCurrentValue());   // einmal pro Teilblock
 
         // Filter-Cutoff inkl. Modulation, Resonanz geglaettet (hohe Guete springt sonst hoerbar)
         qSm[0] += (qHpTarget - qSm[0]) * qCoef;
@@ -194,7 +200,11 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
         const float qHp = qSm[0], qLp = qSm[1];
         boostSm[0] += (s.hpBoost - boostSm[0]) * qCoef;
         boostSm[1] += (s.lpBoost - boostSm[1]) * qCoef;
-        const bool hpPeak = s.hpOn && boostSm[0] > kBoostOffDb, lpPeak = s.lpOn && boostSm[1] > kBoostOffDb;
+        frameHpOn = s.hpOn;
+        frameLpOn = s.lpOn;
+        frameHpPeak = s.hpOn && boostSm[0] > kBoostOffDb;
+        frameLpPeak = s.lpOn && boostSm[1] > kBoostOffDb;
+        const bool hpPeak = frameHpPeak, lpPeak = frameLpPeak;
         {
             const float modF = std::min (std::max (fModSm, -1.0f), 1.0f);
             const float fm = std::exp2 (modF * fDepthSm.getCurrentValue() * 2.0f);
@@ -216,6 +226,9 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
             modPub.store (0.5f * (modSm[0] + modSm[1]), std::memory_order_relaxed);
             envPub.store (envMapped, std::memory_order_relaxed);
         }
+        }
+        const SatCoefs& sat = frameSat;
+        const bool hpOn = frameHpOn, lpOn = frameLpOn, hpPeak = frameHpPeak, lpPeak = frameLpPeak;
 
         for (int j = 0; j < len; ++j)
         {
@@ -229,7 +242,7 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
             const float lfo0 = lfoGate * waveform (s.wave, lfoPos);
             const float lfo1 = lfoGate * waveform (s.wave, lfoPos + phaseOff);
             const float lfoF = lfoGate * waveform (s.wave, lfoPos + fPhaseOff);
-            if (j == 0)
+            if (j == 0 && framePos == 0)
             {
                 lfoPub.store (0.5f * (lfo0 + lfo1), std::memory_order_relaxed);
                 posPub.store (lfoPos, std::memory_order_relaxed);
@@ -269,8 +282,8 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
             const float r0 = (mode == PingPong) ? y1 : y0;
             const float r1 = (mode == PingPong) ? y0 : y1;
             float f0 = r0, f1 = r1;
-            if (s.hpOn) { f0 = hp1.processSample (0, hp.processSample (0, f0)); f1 = hp1.processSample (1, hp.processSample (1, f1)); }
-            if (s.lpOn) { f0 = lp1.processSample (0, lp.processSample (0, f0)); f1 = lp1.processSample (1, lp.processSample (1, f1)); }
+            if (hpOn) { f0 = hp1.processSample (0, hp.processSample (0, f0)); f1 = hp1.processSample (1, hp.processSample (1, f1)); }
+            if (lpOn) { f0 = lp1.processSample (0, lp.processSample (0, f0)); f1 = lp1.processSample (1, lp.processSample (1, f1)); }
             if (hpPeak) { f0 = peakHp.process (0, f0); f1 = peakHp.process (1, f1); }
             if (lpPeak) { f0 = peakLp.process (0, f0); f1 = peakLp.process (1, f1); }
             f0 = loopSat (f0, sat);
@@ -321,7 +334,13 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
                 origOutR[i] = (s.inGainOnDry ? analogSat (orr * inG, sat) : orr) * outG;
             }
         }
-        driveSm.skip (len);
+        start += len;
+        framePos += len;
+        if (framePos == kSub)
+        {
+            driveSm.skip (kSub);
+            framePos = 0;
+        }
     }
     // Nicht-endlicher Zustand (Huellkurve, Modulation, Filter) z. B. durch einen NaN-Parameter: Einheit neu aufsetzen
     if (poisoned || ! std::isfinite (env) || ! std::isfinite (modSm[0] + modSm[1] + fModSm))
