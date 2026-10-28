@@ -187,11 +187,19 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
             std::copy (ext.l.begin(), ext.l.begin() + n, origSrc.l.begin());
             std::copy (ext.r.begin(), ext.r.begin() + n, origSrc.r.begin());
             if (noiseLive)   // Noise laeuft in die Delays hinein (mitgeechot, in der Schleife gesaettigt)
+            {
+                // lokale __restrict-Zeiger: der Compiler darf vektorisieren (Member-Arrays koennten sich sonst ueberlappen)
+                float* __restrict sl = src.l.data();
+                float* __restrict sr2 = src.r.data();
+                const float* __restrict nl = noiseRaw.l.data();
+                const float* __restrict nr = noiseRaw.r.data();
+                const float* __restrict ig = iGain.data();
                 for (int i = 0; i < n; ++i)
                 {
-                    src.l[(size_t) i] += noiseRaw.l[(size_t) i] * iGain[(size_t) i];
-                    src.r[(size_t) i] += noiseRaw.r[(size_t) i] * iGain[(size_t) i];
+                    sl[i] += nl[i] * ig[i];
+                    sr2[i] += nr[i] * ig[i];
                 }
+            }
         }
         else
         {
@@ -206,19 +214,18 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
                 {
                     ++count;
                     const auto uj = (size_t) j;
-                    for (int i = 0; i < n; ++i)
+                    float* __restrict dst[4] = { src.l.data(), src.r.data(), origSrc.l.data(), origSrc.r.data() };
+                    const float* __restrict add[4] = { outs[uj].l.data(), outs[uj].r.data(), origs[uj].l.data(), origs[uj].r.data() };
+                    for (int k = 0; k < 4; ++k)
                     {
-                        const auto ui = (size_t) i;
-                        src.l[ui] += outs[uj].l[ui];      src.r[ui] += outs[uj].r[ui];
-                        origSrc.l[ui] += origs[uj].l[ui]; origSrc.r[ui] += origs[uj].r[ui];
+                        float* __restrict d = dst[k];
+                        const float* __restrict a = add[k];
+                        for (int i = 0; i < n; ++i) d[i] += a[i];
                     }
                 }
             const float inv = 1.0f / (float) std::max (count, 1);
-            for (int i = 0; i < n; ++i)
-            {
-                const auto ui = (size_t) i;
-                src.l[ui] *= inv; src.r[ui] *= inv; origSrc.l[ui] *= inv; origSrc.r[ui] *= inv;
-            }
+            for (float* __restrict d : { src.l.data(), src.r.data(), origSrc.l.data(), origSrc.r.data() })
+                for (int i = 0; i < n; ++i) d[i] *= inv;
         }
 
         onSm[uu].setTargetValue (s.echo[uu].on ? 1.0f : 0.0f);
@@ -300,20 +307,24 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
             // Echo-Anteil = Ausgang minus Original-Spur (auch Echos frueherer Einheiten in der Kette);
             // globaler Filter darauf, optional ohne das erste Echo dieser Einheit
             const bool skip = needFirst;
-            for (int i = 0; i < n; ++i)
+            for (int c = 0; c < 2; ++c)
             {
-                const auto ui = (size_t) i;
-                wetM.l[ui] = outs[uu].l[ui] - origs[uu].l[ui] - (skip ? firsts[uu].l[ui] : 0.0f);
-                wetM.r[ui] = outs[uu].r[ui] - origs[uu].r[ui] - (skip ? firsts[uu].r[ui] : 0.0f);
+                float* __restrict w = c == 0 ? wetM.l.data() : wetM.r.data();
+                const float* __restrict o = c == 0 ? outs[uu].l.data() : outs[uu].r.data();
+                const float* __restrict g = c == 0 ? origs[uu].l.data() : origs[uu].r.data();
+                const float* __restrict f = c == 0 ? firsts[uu].l.data() : firsts[uu].r.data();
+                if (skip) for (int i = 0; i < n; ++i) w[i] = o[i] - g[i] - f[i];
+                else      for (int i = 0; i < n; ++i) w[i] = o[i] - g[i] - 0.0f;
             }
             if (gfOn)
             {
                 gfilter.process (u, wetM.l.data(), wetM.r.data(), n);
                 if (skip)
-                    for (int i = 0; i < n; ++i)
+                    for (int c = 0; c < 2; ++c)
                     {
-                        wetM.l[(size_t) i] += firsts[uu].l[(size_t) i];
-                        wetM.r[(size_t) i] += firsts[uu].r[(size_t) i];
+                        float* __restrict w = c == 0 ? wetM.l.data() : wetM.r.data();
+                        const float* __restrict f = c == 0 ? firsts[uu].l.data() : firsts[uu].r.data();
+                        for (int i = 0; i < n; ++i) w[i] += f[i];
                     }
             }
             for (int i = 0; i < n; ++i)
