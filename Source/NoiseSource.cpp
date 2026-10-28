@@ -63,6 +63,7 @@ void NoiseSource::reset()
     hp.reset(); lp.reset(); hp1.reset(); lp1.reset(); peakHp.reset(); peakLp.reset();
     phase = 0.0;
     framePos = 0;
+    std::copy (std::begin (kSeeds), std::end (kSeeds), std::begin (seed));   // gleicher Zufall nach jedem reset()
     fModS = env = envMapped = 0.0f;
     qSm[0] = qSm[1] = -1.0f;
     initialised = false;

@@ -1148,6 +1148,24 @@ void testAuditFixes()
                + std::to_string (third / std::max (median, 1.0)) + " x)");
     }
 
+    // A4: dieselbe Instanz liefert nach reset() und prepare() denselben Ausgang wie beim ersten Mal (auch mit Noise)
+    {
+        for (const auto& c : harness::baselineCases (sr))
+        {
+            if (c.name != "feat_noise_into" && c.name != "feat_gfilter" && c.name != "algo01_stereo") continue;
+            const auto in = harness::stimulus (2, sr);
+            QuadEngine e; e.prepare (sr);
+            const auto a1 = runEngine (e, c.s, in, 512, c.bpm, c.mut);
+            e.reset();
+            const auto a2 = runEngine (e, c.s, in, 512, c.bpm, c.mut);
+            e.prepare (sr);
+            const auto a3 = runEngine (e, c.s, in, 512, c.bpm, c.mut);
+            auto same = [] (const Sig& x, const Sig& y) { return std::memcmp (x.l.data(), y.l.data(), x.l.size() * sizeof (float)) == 0
+                                                               && std::memcmp (x.r.data(), y.r.data(), x.r.size() * sizeof (float)) == 0; };
+            check (same (a1, a2) && same (a1, a3), "A4: " + c.name + " nach reset()/prepare() bitgenau wie beim ersten Render");
+        }
+    }
+
     // A2/A3: bei konstanten Parametern ist der Ausgang unabhaengig von der Blockgroesse (auch 1, 441, wechselnd)
     {
         auto render = [] (const harness::Case& c, const Sig& in, double fs, const std::function<int (size_t)>& next)

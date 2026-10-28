@@ -22,7 +22,8 @@ private:
     float colored (Color& c, float w, float col) const;
 
     double sr = 44100.0;
-    uint32_t seed[4] = { 0x12345678u, 0x9e3779b9u, 0xdeadbeefu, 0x1b873593u };
+    static constexpr uint32_t kSeeds[4] = { 0x12345678u, 0x9e3779b9u, 0xdeadbeefu, 0x1b873593u };
+    uint32_t seed[4] = { kSeeds[0], kSeeds[1], kSeeds[2], kSeeds[3] };
     Color col[3];
     float crk[2] = { 0.0f, 0.0f };
     float pinkNorm = 1.0f, brownNorm = 1.0f, crkDecay = 0.9f;
