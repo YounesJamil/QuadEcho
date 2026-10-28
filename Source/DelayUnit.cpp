@@ -4,7 +4,6 @@ namespace qe
 {
 namespace
 {
-constexpr float kTwoPi = 6.28318530717958647692f;
 constexpr int kSub = 16;
 
 inline float waveform (int wave, double t) { return lfoWave (wave, t); }
@@ -144,7 +143,6 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
     const double lfoInc = lfoHz / sr;
     const float phaseOff = s.phaseDeg / 360.0f;
     const float fPhaseOff = s.filterPhaseDeg / 360.0f;
-    const float lfoGate = s.lfoOn ? 1.0f : 0.0f;
     const float depthSamples = s.delayDepth * 0.010f * (s.x4 ? 4.0f : 1.0f) * fs;
     const float fbSign = s.fbInvert ? -1.0f : 1.0f;
     const float driveAmt = std::min (std::max (s.inGainDb / 24.0f, 0.0f), 1.0f);   // Input-Gain ueber 0 dB saettigt analog
@@ -239,9 +237,10 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
             env += (a > env ? envAtk : envRel) * (a - env);
 
             // LFO (gemeinsame Phase, R mit Offset)
-            const float lfo0 = lfoGate * waveform (s.wave, lfoPos);
-            const float lfo1 = lfoGate * waveform (s.wave, lfoPos + phaseOff);
-            const float lfoF = lfoGate * waveform (s.wave, lfoPos + fPhaseOff);
+            // LFO aus: nichts berechnen (0 * Welle ergibt ohnehin 0)
+            const float lfo0 = s.lfoOn ? waveform (s.wave, lfoPos) : 0.0f;
+            const float lfo1 = s.lfoOn ? waveform (s.wave, lfoPos + phaseOff) : 0.0f;
+            const float lfoF = s.lfoOn ? waveform (s.wave, lfoPos + fPhaseOff) : 0.0f;
             if (j == 0 && framePos == 0)
             {
                 lfoPub.store (0.5f * (lfo0 + lfo1), std::memory_order_relaxed);
