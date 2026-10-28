@@ -20,20 +20,21 @@ Reflexionen, Noise mit Filtern und Knistern, globaler Filter mit Include Dry und
 
 | Kennzahl bei 192 kHz, Block 32 (Frist 166,7 µs) | Ist | Vorschlag |
 |---|---|---|
-| Mittelwert im Dauerbetrieb, Worst Case | 18 % der Frist | ≤ 20 % |
-| p99 (1 % der Blöcke sind langsamer) | 45 % | ≤ 50 % |
-| p99,9 | 90 % | ≤ 75 % |
-| Einzelblock bei einem Ereignis (Einheit aus, Algorithmuswechsel, Fade, Freeze, Preset) | **660 %** (Einheit aus: 1,1 ms), **395 %** (Algorithmuswechsel: 0,66 ms) | ≤ 100 % der Frist und ≤ 2 × p99 des Dauerbetriebs |
-| Zyklen pro Sample, Worst Case | ≈ 3300 | nur Bericht |
+| Mittelwert im Dauerbetrieb, Worst Case | 17 % der Frist | ≤ 20 % |
+| p99 (1 % der Blöcke sind langsamer) | 21 % (mit laufenden Fades 26 %) | ≤ 50 % |
+| p99,9 | 30 % (mit Fades 32 %) | ≤ 75 % |
+| Langsamster Block im Dauerbetrieb | 51 % | ≤ 100 % |
+| Einzelblock bei einem Ereignis | **734 %** beim Ausschalten einer Einheit (1,0–1,2 ms, jedes Mal); Algorithmuswechsel 44 %, unauffällig | ≤ 100 % der Frist und ≤ 2 × p99 des Dauerbetriebs |
+| Zyklen pro Sample, Worst Case | ≈ 3200 | nur Bericht |
 | Speicher anfordern, Locks, Datei/Konsole im Audio-Thread | ungeprüft | nie (Test mit zählendem `operator new`) |
 
 Zum Vergleich: Standardeinstellungen (Serial, 4 Einheiten) brauchen 6 % der Frist im Mittel; 48 kHz/Block 32 und
-44,1 kHz/Block 512 liegen im Mittel bei 4–5 % (Worst Case).
+44,1 kHz/Block 512 liegen im Worst Case bei 4–5 %. Bei 48 kHz kostet das Ausschalten einer Einheit 0,24 ms (37 %).
 
-**Messmethode (Vorschlag):** Bisher misst das Harness Wanduhrzeit. Damit landen Unterbrechungen durch Windows in den
-Werten (Ausreißer bis 2,4 ms auch bei einfachen Einstellungen). Für die Abnahme schlage ich **CPU-Zeit des Threads**
-(`QueryThreadCycleTime`) vor: fester P-Kern, hohe Priorität, 5 Läufe zu je 20 s, Median über die Läufe. Ereignisse
-werden einzeln ausgelöst und der Block mit dem Ereignis gemessen.
+**Messmethode (freigegeben am 2026-10-28):** CPU-Zeit des Threads (`QueryThreadCycleTime`, über die TSC-Frequenz in
+µs umgerechnet) statt Wanduhr. Fester P-Kern, hohe Priorität, 5 Läufe zu je 20 s, Median über die Läufe, erste Sekunde
+ausgelassen. Unterbrechungen durch Windows zählen so nicht mit; mit Wanduhr lagen die Max-Werte bei 380–1700 % und
+täuschten u. a. eine Spitze beim Algorithmuswechsel vor. Aufruf: `QuadEchoTests --harness bench 20 5`.
 
 ## 2 Abweichung vom Referenzmodell
 
@@ -115,7 +116,7 @@ QuadEchoTests --harness baseline-write <ordner> [manifest]   # float32-WAVs + Pr
 QuadEchoTests --harness baseline-check <ordner>              # neu rendern und vergleichen (Exit 1 bei Abweichung)
 QuadEchoTests --harness manifest-check <manifest>            # nur Prüfsummen, ohne WAVs
 QuadEchoTests --harness refdump <ordner>                     # Einzel-Einheit für das Python-Modell
-QuadEchoTests --harness bench [sekunden]                     # Zeit pro Block
+QuadEchoTests --harness bench [sekunden] [laeufe]            # CPU-Zeit pro Block
 python tests/ref/delayunit_ref.py <refdump-ordner> [--sat tanh|linear|both]
 ```
 
@@ -136,4 +137,3 @@ python tests/ref/delayunit_ref.py <refdump-ordner> [--sat tanh|linear|both]
    Feedback ändern.
 3. **clang-cl installieren** (Visual Studio Build Tools auf `Q:\VS\BuildTools`, Komponente „C++ Clang Compiler for
    Windows“, einige GB auf Q:), damit UBSan läuft. Ohne clang-cl entfällt UBSan, ASan läuft trotzdem.
-4. **CPU-Messmethode:** Thread-CPU-Zeit statt Wanduhr (Abschnitt 1).

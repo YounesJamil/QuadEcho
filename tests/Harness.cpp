@@ -2,6 +2,11 @@
 // Baseline: feste Matrix aus Faellen (jeder Algorithmus x Kanalmodus, jede Transition x Kanalmodus, Einzelfunktionen)
 // x Anregung (Impuls, Sweep, Rauschen) x Samplerate (44.1/48/96/192 kHz), Blockgroesse 512, 120 BPM, je 1,5 s.
 // Jeder spaetere Commit wird dagegen geprueft: Refactors muessen bitgenau nullen.
+#if defined(_WIN32)
+ #define NOMINMAX
+ #define WIN32_LEAN_AND_MEAN
+ #include <windows.h>
+#endif
 #include "Harness.h"
 #include "TestUtil.h"
 #include <algorithm>
@@ -440,7 +445,20 @@ EngineSettings worstCase()
     return s;
 }
 
-struct BenchResult { double p50, p99, p999, max, mean, cyclesPerSample; std::vector<std::pair<double, size_t>> top; };
+struct BenchResult { double p50, p99, p999, max, mean, wallMax, cyclesPerSample; std::vector<std::pair<double, size_t>> top; };
+
+// CPU-Zeit des Threads je Block (Windows: QueryThreadCycleTime, umgerechnet ueber die TSC-Frequenz). Zeiten, in denen
+// Windows den Thread unterbricht, zaehlen so nicht mit. Die Wanduhr laeuft zum Vergleich mit (wallMax).
+uint64_t threadCycles()
+{
+#if defined(_WIN32)
+    ULONG64 c = 0;
+    QueryThreadCycleTime (GetCurrentThread(), &c);
+    return (uint64_t) c;
+#else
+    return 0;
+#endif
+}
 
 BenchResult benchRun (double sr, int block, double seconds, const EngineSettings& s0, const Mutator& mut)
 {
@@ -449,47 +467,53 @@ BenchResult benchRun (double sr, int block, double seconds, const EngineSettings
     const size_t n = (size_t) (seconds * sr), warm = (size_t) sr;
     auto io = noise (n, 0.3f, 3);
     EngineSettings s = s0;
-    std::vector<double> us;
-    us.reserve (n / (size_t) block + 1);
+    std::vector<double> wall, cyc;
     std::vector<size_t> at;
-    at.reserve (n / (size_t) block + 1);
-    double cycles = 0.0;
+    wall.reserve (n / (size_t) block + 1); cyc.reserve (n / (size_t) block + 1); at.reserve (n / (size_t) block + 1);
     size_t counted = 0;
+    const auto runStart = std::chrono::steady_clock::now();
+#if QE_HAVE_TSC
+    const auto tscStart = __rdtsc();
+#endif
     for (size_t pos = 0; pos < n; pos += (size_t) block)
     {
         const int len = (int) std::min<size_t> ((size_t) block, n - pos);
         if (mut) mut (pos, s);
-#if QE_HAVE_TSC
-        const auto c0 = __rdtsc();
-#endif
+        const auto c0 = threadCycles();
         const auto t0 = std::chrono::steady_clock::now();
         e->process (io.l.data() + pos, io.r.data() + pos, len, s, 120.0);
         const auto t1 = std::chrono::steady_clock::now();
-#if QE_HAVE_TSC
-        const auto c1 = __rdtsc();
-#endif
+        const auto c1 = threadCycles();
         if (pos < warm) continue;
-        us.push_back (std::chrono::duration<double, std::micro> (t1 - t0).count());
+        wall.push_back (std::chrono::duration<double, std::micro> (t1 - t0).count());
+        cyc.push_back ((double) (c1 - c0));
         at.push_back (pos);
-#if QE_HAVE_TSC
-        cycles += (double) (c1 - c0);
-#endif
         counted += (size_t) len;
     }
+    const double runUs = std::chrono::duration<double, std::micro> (std::chrono::steady_clock::now() - runStart).count();
+    // Zyklen -> Mikrosekunden; ohne Zyklenzaehler gilt die Wanduhr
+    double usPerCycle = 0.0;
+#if QE_HAVE_TSC
+    usPerCycle = runUs / (double) (__rdtsc() - tscStart);
+#endif
+    std::vector<double> us (wall.size());
+    for (size_t k = 0; k < us.size(); ++k) us[k] = cyc[k] > 0.0 && usPerCycle > 0.0 ? cyc[k] * usPerCycle : wall[k];
+
     BenchResult r {};
     std::vector<size_t> idx (us.size());
     std::iota (idx.begin(), idx.end(), 0);
-    std::sort (idx.begin(), idx.end(), [&] (size_t a, size_t b) { return us[a] < us[b]; });
+    std::sort (idx.begin(), idx.end(), [&] (size_t x, size_t y) { return us[x] < us[y]; });
     auto pct = [&] (double p) { return us[idx[std::min (idx.size() - 1, (size_t) (p * (double) idx.size()))]]; };
     r.p50 = pct (0.5); r.p99 = pct (0.99); r.p999 = pct (0.999); r.max = us[idx.back()];
     r.mean = std::accumulate (us.begin(), us.end(), 0.0) / (double) us.size();
-    r.cyclesPerSample = cycles / (double) std::max<size_t> (counted, 1);
+    r.wallMax = *std::max_element (wall.begin(), wall.end());
+    r.cyclesPerSample = std::accumulate (cyc.begin(), cyc.end(), 0.0) / (double) std::max<size_t> (counted, 1);
     for (size_t k = 0; k < std::min<size_t> (5, idx.size()); ++k)
         r.top.push_back ({ us[idx[idx.size() - 1 - k]], at[idx[idx.size() - 1 - k]] });
     return r;
 }
 
-int bench (double seconds)
+int bench (double seconds, int runs)
 {
     juce::Thread::setCurrentThreadAffinityMask (1u << 2);   // P-Kern (i5-13600KF: logische Kerne 0..11)
     juce::Process::setPriority (juce::Process::HighPriority);
@@ -513,21 +537,31 @@ int bench (double seconds)
         { "worst + Einheit an/aus", worstCase(), toggles },
         { "worst + Algorithmuswechsel", worstCase(), algos },
     };
-    std::cout << "[Zeit pro Block, " << seconds << " s je Messung, erste Sekunde ausgelassen]" << std::endl;
+    std::cout << "[CPU-Zeit des Threads pro Block, " << runs << " Laeufe zu " << seconds
+              << " s, Median ueber die Laeufe, erste Sekunde ausgelassen]" << std::endl;
     for (const auto& cfg : { std::pair<double, int> { 192000.0, 32 }, { 48000.0, 32 }, { 44100.0, 512 } })
     {
         const double deadline = 1.0e6 * cfg.second / cfg.first;
         std::cout << (int) cfg.first << " Hz, Block " << cfg.second << " (Frist " << juce::String (deadline, 1) << " us)" << std::endl;
         for (const auto& sc : scns)
         {
-            const auto r = benchRun (cfg.first, cfg.second, seconds, sc.s, sc.mut ? sc.mut (cfg.first) : Mutator());
+            std::vector<BenchResult> rs;
+            for (int k = 0; k < runs; ++k) rs.push_back (benchRun (cfg.first, cfg.second, seconds, sc.s, sc.mut ? sc.mut (cfg.first) : Mutator()));
+            auto med = [&rs] (double BenchResult::* f)
+            {
+                std::vector<double> v;
+                for (const auto& x : rs) v.push_back (x.*f);
+                std::sort (v.begin(), v.end());
+                return v[v.size() / 2];
+            };
             auto pc = [deadline] (double v) { return juce::String (100.0 * v / deadline, 1) + " %"; };
-            std::cout << "  " << sc.name << ": p50 " << juce::String (r.p50, 1) << " us (" << pc (r.p50) << "), p99 "
-                      << juce::String (r.p99, 1) << " (" << pc (r.p99) << "), p99.9 " << juce::String (r.p999, 1) << " (" << pc (r.p999)
-                      << "), max " << juce::String (r.max, 1) << " (" << pc (r.max) << "), Mittel " << pc (r.mean)
-                      << ", " << juce::String (r.cyclesPerSample, 0) << " Zyklen/Sample" << std::endl;
-            std::cout << "    langsamste Bloecke:";
-            for (const auto& t : r.top) std::cout << " " << juce::String (t.first, 1) << " us @ " << juce::String ((double) t.second / cfg.first, 3) << " s;";
+            std::cout << "  " << sc.name << ": Mittel " << pc (med (&BenchResult::mean))
+                      << ", p50 " << pc (med (&BenchResult::p50)) << ", p99 " << pc (med (&BenchResult::p99))
+                      << ", p99.9 " << pc (med (&BenchResult::p999)) << ", max " << pc (med (&BenchResult::max))
+                      << " (" << juce::String (med (&BenchResult::max), 1) << " us; Wanduhr max " << pc (med (&BenchResult::wallMax)) << ")"
+                      << ", " << juce::String (med (&BenchResult::cyclesPerSample), 0) << " Zyklen/Sample" << std::endl;
+            std::cout << "    langsamste Bloecke (letzter Lauf):";
+            for (const auto& t : rs.back().top) std::cout << " " << juce::String (t.first, 1) << " us @ " << juce::String ((double) t.second / cfg.first, 3) << " s;";
             std::cout << std::endl;
         }
     }
@@ -544,7 +578,8 @@ int harnessMain (int argc, char** argv)
     if (cmd == "baseline-check" && arg.isNotEmpty()) return baselineCheck (file (arg), false);
     if (cmd == "manifest-check" && arg.isNotEmpty()) return baselineCheck (file (arg), true);
     if (cmd == "refdump" && arg.isNotEmpty())        return refDump (file (arg));
-    if (cmd == "bench")                              return bench (arg.isNotEmpty() ? arg.getDoubleValue() : 20.0);
+    if (cmd == "bench")                              return bench (arg.isNotEmpty() ? arg.getDoubleValue() : 20.0,
+                                                                  argc > 4 ? juce::String (argv[4]).getIntValue() : 5);
     std::cout << "Aufruf: siehe tests/Harness.h" << std::endl;
     return 2;
 }
