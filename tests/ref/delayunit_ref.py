@@ -240,6 +240,62 @@ class Line:
         return ((c3 * t + c2) * t + c1) * t + y0
 
 
+# ---- Oversampler.h ----------------------------------------------------------------------------------------------
+OS_K = 12
+OS_TAPS = 4 * OS_K - 1
+OS_LATENCY = 2 * OS_K - 1
+
+
+def os_design():
+    """Halbband-FIR wie Oversampler2x::design (Kaiser beta 8), in double."""
+    def i0(x):
+        total, term = 1.0, 1.0
+        for k in range(1, 40):
+            term *= (x / (2.0 * k)) ** 2
+            total += term
+        return total
+    c = (OS_TAPS - 1) // 2
+    h = []
+    for k in range(OS_TAPS):
+        m = k - c
+        v = 0.5 if m == 0 else (math.sin(0.5 * math.pi * m) / (math.pi * m) if m % 2 else 0.0)
+        r = m / c
+        v *= i0(8.0 * math.sqrt(max(0.0, 1.0 - r * r))) / i0(8.0)
+        h.append(v)
+    total = sum(h)
+    side = [h[2 * j] / total for j in range(2 * OS_K)]
+    return [2.0 * v for v in side], side
+
+
+OS_UP, OS_DOWN = os_design()
+
+
+class Oversampler2x:
+    """Polyphasen-Form wie im C++: up() liefert zwei Samples der doppelten Rate, down() nimmt zwei."""
+    def __init__(self):
+        self.x = [0.0] * (2 * OS_K + 1)
+        self.even = [0.0] * (2 * OS_K + 1)
+        self.odd = [0.0] * (2 * OS_K + 1)
+
+    def up(self, v):
+        self.x.insert(0, v); self.x.pop()
+        return sum(t * x for t, x in zip(OS_UP, self.x)), self.x[OS_K - 1]
+
+    def down(self, a, b):
+        self.even.insert(0, a); self.even.pop()
+        self.odd.insert(0, b); self.odd.pop()
+        return sum(t * e for t, e in zip(OS_DOWN, self.even)) + 0.5 * self.odd[OS_K]
+
+
+class FixedDelay:
+    def __init__(self, n):
+        self.buf = [0.0] * n
+
+    def process(self, v):
+        self.buf.append(v)
+        return self.buf.pop(0)
+
+
 # ---- DelayUnit ------------------------------------------------------------------------------------------------
 class DelayUnitModel:
     def __init__(self, sr, sat="tanh", f32_states=()):
@@ -266,6 +322,12 @@ class DelayUnitModel:
         self.last_transition = -1
         self.initialised = False
         self.loop_sat = math.tanh if sat == "tanh" else (lambda x: x)
+        # wie im C++: unter 88,2 kHz laeuft die Schleifen-Saettigung mit doppelter Rate, der Input-Pfad (ohne Drive)
+        # ueber eine exakte Verzoegerung; beide verzoegern um OS_LATENCY, die Leitungen werden entsprechend frueher gelesen
+        self.use_os = sr < 88200.0
+        self.os_lat = float(OS_LATENCY) if self.use_os else 0.0
+        self.os_f = [Oversampler2x(), Oversampler2x()]
+        self.x_del = [FixedDelay(OS_LATENCY), FixedDelay(OS_LATENCY)]
         if "cur" in f32_states:
             self.rp_coef = coef_f32(1.0, 0.2, sr)
         if "env" in f32_states:
@@ -278,8 +340,10 @@ class DelayUnitModel:
 
         fi, fc = self.fi, self.fc
 
+        lat = self.os_lat
+
         def rd(d):
-            return l.read_hermite(min(max(fi(d), 2.0), max_d))
+            return l.read_hermite(min(max(fi(d) - lat, 2.0), max_d))
 
         if not l.init:
             l.base_a = l.base_b = l.cur = target
@@ -423,7 +487,14 @@ class DelayUnitModel:
                     f0 = pk_hp.tick(0, f0); f1 = pk_hp.tick(1, f1)
                 if lp_peak:
                     f0 = pk_lp.tick(0, f0); f1 = pk_lp.tick(1, f1)
-                f0, f1 = loop_sat(f0), loop_sat(f1)
+                if self.use_os:
+                    a, b = self.os_f[0].up(f0)
+                    f0 = self.os_f[0].down(loop_sat(a), loop_sat(b))
+                    a, b = self.os_f[1].up(f1)
+                    f1 = self.os_f[1].down(loop_sat(a), loop_sat(b))
+                    x0, x1 = self.x_del[0].process(x0), self.x_del[1].process(x1)
+                else:
+                    f0, f1 = loop_sat(f0), loop_sat(f1)
                 w0, w1 = x0 + fb * f0, x1 + fb * f1
                 if abs(w0) < 1e-18:
                     w0 = 0.0
