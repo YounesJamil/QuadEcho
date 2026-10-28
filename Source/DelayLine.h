@@ -30,10 +30,11 @@ public:
 
     // Verzoegerung d (>= 2) Samples relativ zum NAECHSTEN zu schreibenden Sample.
     // Aufruf VOR push(): ganzzahliges d liefert exakt in[n-d].
-    float readHermite (float d) const
+    // d in double: in float waere die Aufloesung bei 4 s / 192 kHz nur 1/16 Sample.
+    float readHermite (double d) const
     {
         const int di = (int) d;
-        const float t = 1.0f - (d - (float) di);
+        const float t = (float) (1.0 - (d - (double) di));
         const int i1 = writePos - di;
         const float ym1 = buf[(size_t) ((i1 - 1) & mask)];
         const float y0  = buf[(size_t) (i1 & mask)];

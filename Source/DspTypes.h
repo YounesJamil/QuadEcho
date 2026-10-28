@@ -268,6 +268,26 @@ inline float lfoWave (int wave, double t)
     }
 }
 
+// Wie lfoWave, aber in double (Delay-Modulation: die Welle bestimmt den Lese-Index, siehe AUDIT.md C5/C6)
+inline double lfoWaveD (int wave, double t)
+{
+    const double cycle = std::floor (t);
+    const double p = t - cycle;
+    switch (wave)
+    {
+        case Sine:     return std::sin (6.283185307179586 * p);
+        case Triangle: { double q = p + 0.25; q -= std::floor (q); return 1.0 - 4.0 * std::abs (q - 0.5); }
+        case SawUp:    return 2.0 * p - 1.0;
+        case SawDown:  return 1.0 - 2.0 * p;
+        case SmoothRandom:
+        {
+            const double a = lfoRandomAt ((int64_t) cycle), b = lfoRandomAt ((int64_t) cycle + 1);
+            return a + (b - a) * (0.5 - 0.5 * std::cos (3.141592653589793 * p));
+        }
+        default:       return p < 0.5 ? 1.0 : -1.0;
+    }
+}
+
 // Koeffizienten der Saettigungen: werden einmal pro Teilblock berechnet, nicht pro Sample
 struct SatCoefs
 {

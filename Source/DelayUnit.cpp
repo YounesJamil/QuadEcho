@@ -6,7 +6,7 @@ namespace
 {
 constexpr int kSub = 16;
 
-inline float waveform (int wave, double t) { return lfoWave (wave, t); }
+inline double waveform (int wave, double t) { return lfoWaveD (wave, t); }
 } // namespace
 
 void DelayUnit::prepare (double sampleRate)
@@ -31,9 +31,9 @@ void DelayUnit::prepare (double sampleRate)
 
     rpCoef  = 1.0 - std::exp (-1.0 / (0.2 * sr));
     qCoef   = 1.0f - std::exp (-(float) kSub / (0.03f * (float) sr));   // Resonanz, pro Teilblock
-    modCoef = 1.0f - std::exp (-1.0f / (0.004f * (float) sr));
-    envAtk  = 1.0f - std::exp (-1.0f / (0.005f * (float) sr));
-    envRel  = 1.0f - std::exp (-1.0f / (0.15f * (float) sr));
+    modCoef = 1.0 - std::exp (-1.0 / (0.004 * sr));
+    envAtk  = 1.0 - std::exp (-1.0 / (0.005 * sr));
+    envRel  = 1.0 - std::exp (-1.0 / (0.15 * sr));
     reset();
 }
 
@@ -62,18 +62,18 @@ void DelayUnit::resetState()
 {
     for (auto& l : line) { l.fading = false; l.init = false; }
     hp.reset(); lp.reset(); hp1.reset(); lp1.reset(); peakHp.reset(); peakLp.reset();
-    lfoPos = 0.0; modSm[0] = modSm[1] = fModSm = 0.0f; env = envMapped = 0.0f;
+    lfoPos = 0.0; modSm[0] = modSm[1] = fModSm = 0.0; env = 0.0; envMapped = 0.0f;
     lastTransition = -1;
     framePos = 0;
     initialised = false;
 }
 
-float DelayUnit::readLine (Line& l, float modSamples, float target, int transition, float& first, bool needFirst, bool frozen)
+float DelayUnit::readLine (Line& l, double modSamples, double target, int transition, float& first, bool needFirst, bool frozen)
 {
-    const float maxD = (float) (capacity - 8);
-    auto clampD = [maxD] (float d) { return std::min (std::max (d, 2.0f), maxD); };
+    const double maxD = (double) (capacity - 8);
+    auto clampD = [maxD] (double d) { return std::min (std::max (d, 2.0), maxD); };
     // liest die Hauptleitung und die Leitung ohne Feedback an derselben Stelle
-    auto read2 = [&l, &clampD, needFirst] (float d, float& f)
+    auto read2 = [&l, &clampD, needFirst] (double d, float& f)
     {
         d = clampD (d);
         f = needFirst ? l.first.readHermite (d) : 0.0f;
@@ -93,14 +93,14 @@ float DelayUnit::readLine (Line& l, float modSamples, float target, int transiti
 
     if (transition == Repitch)
     {
-        l.cur += ((double) target - l.cur) * rpCoef;
-        if (std::abs ((double) target - l.cur) < 1.0e-6) l.cur = target;   // am Ziel einrasten
-        l.baseA = (float) l.cur;
+        l.cur += (target - l.cur) * rpCoef;
+        if (std::abs (target - l.cur) < 1.0e-6) l.cur = target;   // am Ziel einrasten
+        l.baseA = l.cur;
         l.fading = false;
         return read2 (l.baseA + modSamples, first);
     }
 
-    if (! l.fading && std::abs (target - l.baseA) > (frozen ? 1.0e-3f : 0.5f))
+    if (! l.fading && std::abs (target - l.baseA) > (frozen ? 1.0e-3 : 0.5))
     {
         l.fading = true;
         l.fadePos = 0;
@@ -138,19 +138,19 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
     const auto divBeats = [] (int i) { return divBeatsOf (i); };
     double msL, msR;
     delayTimesMs (s, bpm, msL, msR);
-    const float target[2] = { (float) (msL * sr / 1000.0), (float) (msR * sr / 1000.0) };
+    const double target[2] = { msL * sr / 1000.0, msR * sr / 1000.0 };
 
     const double lfoHz = s.lfoSync ? (bpm / 60.0) / divBeats (s.lfoDiv) : (double) s.rateHz;
     const double lfoInc = lfoHz / sr;
-    const float phaseOff = s.phaseDeg / 360.0f;
-    const float fPhaseOff = s.filterPhaseDeg / 360.0f;
-    const float depthSamples = s.delayDepth * 0.010f * (s.x4 ? 4.0f : 1.0f) * fs;
+    const double phaseOff = s.phaseDeg / 360.0;
+    const double fPhaseOff = s.filterPhaseDeg / 360.0;
+    const double depthSamples = (double) s.delayDepth * 0.010 * (s.x4 ? 4.0 : 1.0) * sr;
     const float fbSign = s.fbInvert ? -1.0f : 1.0f;
     const float driveAmt = std::min (std::max (s.inGainDb / 24.0f, 0.0f), 1.0f);   // Input-Gain ueber 0 dB saettigt analog
     const float qLpTarget = 0.7071f + s.res * s.res * 4.0f, qHpTarget = 0.7071f + s.hpRes * s.hpRes * 4.0f;
     const int mode = s.mode;
     const bool frozen = s.freeze;
-    const float depthTarget = frozen ? 0.0f : depthSamples;   // keine Modulation im gehaltenen Loop
+    const double depthTarget = frozen ? 0.0 : depthSamples;   // keine Modulation im gehaltenen Loop
 
     if (! initialised)
     {
@@ -188,8 +188,8 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
         if (framePos == 0)
         {
         // Envelope -> 0..1 (dB-Skala), pro Teilblock
-        const float envDb = 20.0f * std::log10 (env + 1e-6f);
-        envMapped = std::min (std::max ((envDb + 48.0f) / 48.0f, 0.0f), 1.0f);
+        const double envDb = 20.0 * std::log10 (env + 1e-6);
+        envMapped = (float) std::min (std::max ((envDb + 48.0) / 48.0, 0.0), 1.0);
 
         frameSat = makeSatCoefs (driveSm.getCurrentValue());   // einmal pro Teilblock
 
@@ -205,7 +205,7 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
         frameLpPeak = s.lpOn && boostSm[1] > kBoostOffDb;
         const bool hpPeak = frameHpPeak, lpPeak = frameLpPeak;
         {
-            const float modF = std::min (std::max (fModSm, -1.0f), 1.0f);
+            const float modF = (float) std::min (std::max (fModSm, -1.0), 1.0);
             const float fm = std::exp2 (modF * fDepthSm.getCurrentValue() * 2.0f);
             const float maxF = 0.45f * fs;
             if (s.hpOn)
@@ -222,7 +222,7 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
                 if (lpPeak) peakLp.set (sr, fc, qLp, boostSm[1]); else peakLp.reset();
             }
             else { lp.reset(); lp1.reset(); peakLp.reset(); }
-            modPub.store (0.5f * (modSm[0] + modSm[1]), std::memory_order_relaxed);
+            modPub.store ((float) (0.5 * (modSm[0] + modSm[1])), std::memory_order_relaxed);
             envPub.store (envMapped, std::memory_order_relaxed);
         }
         }
@@ -239,19 +239,20 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
 
             // LFO (gemeinsame Phase, R mit Offset)
             // LFO aus: nichts berechnen (0 * Welle ergibt ohnehin 0)
-            const float lfo0 = s.lfoOn ? waveform (s.wave, lfoPos) : 0.0f;
-            const float lfo1 = s.lfoOn ? waveform (s.wave, lfoPos + phaseOff) : 0.0f;
-            const float lfoF = s.lfoOn ? waveform (s.wave, lfoPos + fPhaseOff) : 0.0f;
+            const double lfo0 = s.lfoOn ? waveform (s.wave, lfoPos) : 0.0;
+            const double lfo1 = s.lfoOn ? waveform (s.wave, lfoPos + phaseOff) : 0.0;
+            const double lfoF = s.lfoOn ? waveform (s.wave, lfoPos + fPhaseOff) : 0.0;
             if (j == 0 && framePos == 0)
             {
-                lfoPub.store (0.5f * (lfo0 + lfo1), std::memory_order_relaxed);
+                lfoPub.store ((float) (0.5 * (lfo0 + lfo1)), std::memory_order_relaxed);
                 posPub.store (lfoPos, std::memory_order_relaxed);
                 rateHzPub.store ((float) lfoHz, std::memory_order_relaxed);
             }
             lfoPos += lfoInc;
-            const float m0 = lfo0 * (1.0f - s.envMix) + envMapped * s.envMix;
-            const float m1 = lfo1 * (1.0f - s.envMix) + envMapped * s.envMix;
-            const float mF = lfoF * (1.0f - s.envMix) + envMapped * s.envMix;
+            const double em = s.envMix, envPart = (double) envMapped * em;
+            const double m0 = lfo0 * (1.0 - em) + envPart;
+            const double m1 = lfo1 * (1.0 - em) + envPart;
+            const double mF = lfoF * (1.0 - em) + envPart;
             fModSm += (mF - fModSm) * modCoef;
             modSm[0] += (m0 - modSm[0]) * modCoef;
             modSm[1] += (m1 - modSm[1]) * modCoef;
@@ -262,7 +263,7 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
             const float wid = widthSm.getNextValue();
             const float lvl = mixSm.getNextValue();
             fDepthSm.skip (1);
-            const float depthNow = depthSm.getNextValue();
+            const double depthNow = depthSm.getNextValue();
             const float fz = freezeSm.getNextValue();
 
             // Eingang je Kanalmodus (Freeze schliesst ihn)

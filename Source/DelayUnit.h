@@ -40,13 +40,13 @@ private:
     {
         DelayLine dl;
         DelayLine first;   // gleiche Verzoegerung ohne Feedback: nur das erste Echo
-        float baseA = 0.0f, baseB = 0.0f;
+        double baseA = 0.0, baseB = 0.0;   // Lese-Position in Samples (double, siehe DelayLine::readHermite)
         double cur = 0.0;   // Repitch-Glaettung in double: in float bleibt sie bis 1200 Samples vor dem Ziel stehen
         bool fading = false, init = false;
         int fadePos = 0, fadeLen = 1;
     };
 
-    float readLine (Line& l, float modSamples, float target, int transition, float& first, bool needFirst, bool frozen);
+    float readLine (Line& l, double modSamples, double target, int transition, float& first, bool needFirst, bool frozen);
     void resetState();
 
     double sr = 44100.0;
@@ -55,13 +55,17 @@ private:
     std::array<Line, 2> line;
     juce::dsp::StateVariableTPTFilter<float> hp, lp;      // 2. Ordnung mit Resonanz ...
     juce::dsp::FirstOrderTPTFilter<float> hp1, lp1;        // ... plus 1. Ordnung = 18 dB/Oktave
-    juce::SmoothedValue<float> inGainSm, fbSm, mixSm, outSm, widthSm, depthSm, fDepthSm, driveSm, freezeSm;
+    juce::SmoothedValue<float> inGainSm, fbSm, mixSm, outSm, widthSm, fDepthSm, driveSm, freezeSm;
+    juce::SmoothedValue<double> depthSm;   // Modulationstiefe in Samples: bestimmt den Lese-Index
     double lfoPos = 0.0;   // LFO-Position in Zyklen, fortlaufend
-    float modSm[2] = { 0.0f, 0.0f };
-    float fModSm = 0.0f;
-    float env = 0.0f, envMapped = 0.0f;
+    // Huellkurve und Modulationsglaettung in double: bei 192 kHz sind die Koeffizienten ~1e-5, in float ungenau
+    double modSm[2] = { 0.0, 0.0 };
+    double fModSm = 0.0;
+    double env = 0.0;
+    float envMapped = 0.0f;
     double rpCoef = 0.001;
-    float modCoef = 0.01f, envAtk = 0.01f, envRel = 0.001f, qCoef = 0.03f;
+    double modCoef = 0.01, envAtk = 0.01, envRel = 0.001;
+    float qCoef = 0.03f;
     float qSm[2] = { 0.8f, 0.8f };   // geglaettete Guete HP, LP
     float boostSm[2] = { 0.0f, 0.0f };   // geglaetteter Boost HP, LP (dB)
     PeakEq peakHp, peakLp;              // Glocke an der Grenzfrequenz
