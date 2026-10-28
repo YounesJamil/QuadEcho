@@ -2,6 +2,9 @@
 // Aufruf: QuadEchoTests [Ausgabeordner fuer WAVs]
 //        QuadEchoTests --harness ...   (Referenz-Harness, siehe Harness.h)
 #include <chrono>
+#if defined(_M_X64) || defined(__x86_64__)
+ #include <xmmintrin.h>
+#endif
 #include "../Source/StateMigration.h"
 #include "../Source/Tail.h"
 #include "TestUtil.h"
@@ -1365,6 +1368,31 @@ void testAuditFixes()
                && std::memcmp (p512.r.data(), p441.r.data(), p512.r.size() * sizeof (float)) == 0,
                "K-h: bei laufender Wiedergabe bitgenau unabhaengig von der Blockgroesse (kein Nachstellen im Lauf)");
     }
+
+#if defined(_M_X64) || defined(__x86_64__)
+    // C10: auch ohne FTZ/DAZ beim Aufrufer kostet der Ausklang nicht mehr als 1,5-mal so viel (Engine setzt FTZ selbst)
+    {
+        double cyc[2] {};
+        for (int ftz = 0; ftz < 2; ++ftz)
+        {
+            const unsigned int old = _mm_getcsr();
+            _mm_setcsr (ftz ? (old | 0x8040u) : (old & ~0x8040u));
+            auto s = harness::worstCase();
+            s.noise.on = false;
+            QuadEngine e; e.prepare (sr);
+            const size_t n = (size_t) (25.0 * sr);
+            auto io = impulse (n, 100);
+            for (size_t pos = 0; pos < n; pos += 512)
+            {
+                const auto c0 = harness::threadCycles();
+                e.process (io.l.data() + pos, io.r.data() + pos, (int) std::min<size_t> (512, n - pos), s, 120.0);
+                if (pos >= (size_t) (15.0 * sr)) cyc[ftz] += (double) (harness::threadCycles() - c0);
+            }
+            _mm_setcsr (old);
+        }
+        check (cyc[0] <= 1.5 * cyc[1], "C10: Ausklang ohne FTZ beim Aufrufer hoechstens 1,5-fach (Faktor " + std::to_string (cyc[0] / std::max (cyc[1], 1.0)) + ")");
+    }
+#endif
 
     // A2/A3: bei konstanten Parametern ist der Ausgang unabhaengig von der Blockgroesse (auch 1, 441, wechselnd)
     {

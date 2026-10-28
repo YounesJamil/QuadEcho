@@ -114,6 +114,9 @@ void QuadEngine::computeDuck (int n, const DuckSettings& d, float* gain)
 
 void QuadEngine::process (float* l, float* r, int n, const EngineSettings& s, double bpm, double ppq)
 {
+    // Denormals (Filter- und Raumzustaende im Ausklang) kosten ohne FTZ/DAZ ein Vielfaches an Rechenzeit:
+    // die Engine setzt die Flags selbst, auch ausserhalb von processBlock (Tests, andere Hosts der Engine)
+    const juce::ScopedNoDenormals noDenormals;
     // Nicht-endliche Samples vom Host (NaN, Inf) wuerden Delay-Leitungen und Filter dauerhaft vergiften: als Stille behandeln
     for (int i = 0; i < n; ++i)
     {
