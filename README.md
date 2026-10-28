@@ -26,7 +26,7 @@ cmake --build Q:/QuadEcho/build --config Release --parallel --target QuadEchoTes
 Q:\QuadEcho\build\QuadEchoTests_artefacts\Release\QuadEchoTests.exe test-renders
 ```
 
-234 Prüfungen: Delay-Zeiten bei 44,1-192 kHz, Feedback, Modulation, Klickfreiheit, Algorithmen, 3D-Platzierung, Binaural, Doppler, Mute/Solo/Output-aus, Place Dry, analoger Drive, Drive in der Schleife, globaler Filter, Noise, Limiter, Feedback-Bremse, Dry/Wet-Konzept (100 % Wet ohne Original, auch in Ketten), Freeze, Ducking, Umrechnung alter Zustände, Platzierung bei ausgeschalteter Ausgangseinheit, Sync-Modi (Notes/Triplet/Dotted/16th), Offset und Sync-Modus je Kanal, Filtersteilheit 18 dB/Oktave, Filter-Boost, Random-LFO, Stereo-Phase des globalen Filters, Fuzz auf NaN/Inf, CPU-Last. Zusätzlich 60 WAV-Renders nach `test-renders/` (nicht im Git).
+605 Prüfungen (inkl. Regressionstests zu den Audit-Befunden, siehe AUDIT.md): Delay-Zeiten bei 44,1-192 kHz, Feedback, Modulation, Klickfreiheit, Algorithmen, 3D-Platzierung, Binaural, Doppler, Mute/Solo/Output-aus, Place Dry, analoger Drive, Drive in der Schleife, globaler Filter, Noise, Limiter, Feedback-Bremse, Dry/Wet-Konzept (100 % Wet ohne Original, auch in Ketten), Freeze, Ducking, Umrechnung alter Zustände, Platzierung bei ausgeschalteter Ausgangseinheit, Sync-Modi (Notes/Triplet/Dotted/16th), Offset und Sync-Modus je Kanal, Filtersteilheit 18 dB/Oktave, Filter-Boost, Random-LFO, Stereo-Phase des globalen Filters, Fuzz auf NaN/Inf, CPU-Last. Zusätzlich 60 WAV-Renders nach `test-renders/` (nicht im Git).
 
 UI-Pruefung ohne Fenster: `QuadEchoUiShot` rendert den Editor in ein PNG, z. B. `QuadEchoUiShot.exe noise.png expert=1 expertPage=1 nz_on=1 audio=1` (Parameter als `id=wert`, siehe Parameterliste).
 
@@ -126,6 +126,7 @@ Im Raum platziert werden die **Echos**. Das Original bleibt in der Mitte. Mit `P
 | Global Output | Master-Pegel hinter dem Routing |
 | Feedback Scale | skaliert die Feedbacks aller vier Einheiten gemeinsam (100 % = wie eingestellt; runterziehen, um die Echos live ausklingen zu lassen) |
 | LIMITER | weicher Limiter am Ende, hält Spitzen unter 0 dBFS |
+| ON DRY | Limiter auch auf das Original. Aus (Standard): das Original bleibt unangetastet, nur die Echos werden in den verbleibenden Platz unter 0 dBFS gedrückt. Ältere Projekte laden mit ON DRY an und klingen wie vorher. Unabhängig davon begrenzt eine Notbremse den Ausgang immer auf höchstens +6 dBFS (darunter bis +4 dBFS unverändert). |
 
 **POSITION & ROOM** (rechts neben dem Pad):
 
@@ -158,7 +159,7 @@ Gleiche Funktion = gleiches Symbol und gleiche Farbe: **Dry** hat ein neutrales 
 
 - **Standalone:** Windows meldet "Audio input is muted to avoid feedback loop". Das ist der Schutz gegen Rückkopplung zwischen Lautsprecher und Mikro, kein Fehler. Mit `Settings...` lässt sich der Eingang freigeben.
 - **Binaural** nur mit Kopfhörern verwenden.
-- **Input-Gain / Drive:** Über 0 dB sättigt der Input weich mit leichtem Analog-Charakter (mehr Gain = mehr Drive, bis +24 dB). Bei 0 dB oder darunter bleibt der Klang unverändert. Mit `GAIN ON DRY` gilt es auch für den Anteil des Originals, der über diese Einheit läuft. Der Drive sitzt außerdem **in der Feedback-Schleife**: Jede Wiederholung läuft erneut durch die Sättigung, späte Repeats werden dichter und schmutziger (Space-Echo-/Pedal-Verhalten), bleiben aber stabil und klingen bei Feedback unter 100 % ab.
+- **Input-Gain / Drive:** Über 0 dB sättigt der Input weich mit leichtem Analog-Charakter (mehr Gain = mehr Drive, bis +24 dB). Bei 0 dB oder darunter bleibt der Input unverändert. Unter 0 dB wird außerdem die Sättigung in der Feedback-Schleife schwächer: Sie bekommt einen sauberen linearen Bereich, der mit sinkendem Gain wächst (bei -24 dB sauber bis -1,9 dBFS), die Obergrenze bleibt, sodass Feedback 110 % begrenzt bleibt. Bei 44,1/48 kHz laufen die Sättigungen mit doppelter Abtastrate (weniger "digitale" Spiegelfrequenzen). Mit `GAIN ON DRY` gilt es auch für den Anteil des Originals, der über diese Einheit läuft. Der Drive sitzt außerdem **in der Feedback-Schleife**: Jede Wiederholung läuft erneut durch die Sättigung, späte Repeats werden dichter und schmutziger (Space-Echo-/Pedal-Verhalten), bleiben aber stabil und klingen bei Feedback unter 100 % ab.
 - **Live-Modulation** (Modulationsseite): zeigt die letzten 4 Sekunden, im Stil der Karten und mit den Funktionsfarben (LFO pink, Hüllkurve creme, Delay in der Einheitsfarbe, Filter lila). Oben der LFO als echte Kurve (bei Phase R zwei Kurven), dann die Hüllkurve des Eingangssignals, darunter die Wirkung auf Delay-Zeit und Filter, jeweils mit der Amplitude, die `Delay depth` bzw. `Filter depth` ergeben.
 - **Envelope Mix** wirkt nur, wenn `Delay depth` oder `Filter depth` größer als 0 ist (der Filter muss dafür an sein). Die Hüllkurve folgt der Lautstärke des Eingangssignals der Einheit.
 
@@ -205,7 +206,7 @@ Je Einheit (Präfix `a_` bis `d_`, 39 Parameter) und global (9 Parameter). Alle 
 | `lfoOn` | LFO On (Hüllkurve moduliert weiter) | an/aus | an |
 | `wave` | LFO Wave | Sine, Triangle, Saw Up, Saw Down, Square | Sine |
 | `rate` | LFO Rate | 0,01-20 Hz | 1 Hz |
-| `lfoSync` | LFO Sync | an/aus | aus |
+| `lfoSync` | LFO Sync (folgt während der Wiedergabe der Songposition: Phase 0 auf dem Notenraster ab Songbeginn) | an/aus | aus |
 | `lfoDiv` | LFO Division | 1/32 bis 4/1 | 1/4 |
 | `phase` | LFO Phase R | 0-360 Grad | 0 |
 | `fPhase` | LFO Phase Filter (Filter-Modulation gegen Delay-Modulation verschieben) | 0-360 Grad | 0 |
@@ -235,6 +236,7 @@ Je Einheit (Präfix `a_` bis `d_`, 39 Parameter) und global (9 Parameter). Alle 
 | `distDelay` | Distance Delay | an/aus | aus |
 | `early` | Early Reflections | an/aus | an |
 | `limiter` | Soft Limiter | an/aus | an |
+| `limitDry` | Limiter On Dry (aus: Original unangetastet) | an/aus | aus |
 
 ### Expert: globaler Filter (`gf_*`), Noise (`nz_*`) und Ducking (`dk_*`)
 
@@ -259,12 +261,12 @@ Je Einheit (Präfix `a_` bis `d_`, 39 Parameter) und global (9 Parameter). Alle 
 
 ## Technik
 
-- `Source/DelayUnit.*`: eine Echo-Einheit. Hermite-interpolierte Delayline (max. 4 s), Feedback mit HP/LP und `tanh`-Sättigung, Übergangsmodi (Repitch glättet die Zeit, Fade und Jump blenden zwischen zwei Abgriffen), LFO, Hüllkurvenfolger.
+- `Source/DelayUnit.*`: eine Echo-Einheit. Hermite-interpolierte Delayline (max. 4 s, Lese-Index in double), Feedback mit HP/LP und `tanh`-Sättigung (bei 44,1/48 kHz 2-fach überabgetastet, `Source/Oversampler.h`), Übergangsmodi (Repitch glättet die Zeit, Fade und Jump blenden zwischen zwei Abgriffen), LFO, Hüllkurvenfolger.
 - `Source/Spatializer.*`: 3D-Platzierung (Stereo und Binaural).
 - `Source/GlobalFilter.*`, `Source/NoiseSource.*`: globaler Filter und Noise-Quelle.
 - `Source/QuadEngine.*`: vier Einheiten, Algorithmen, Mute/Solo, Original-Spur (trennt Original und Echos am Ausgang), gewichtete Ausgangssumme, globaler Mix, Ducking, Soft-Limiter, Pegel für die UI. Reines DSP ohne Plugin-Abhängigkeit, daher offline testbar.
 - `Source/Params.*`, `Source/Presets.*`: APVTS-Layout, lockfreies Lesen der Parameter, Start-Presets.
 - `Source/StateMigration.h`: Zustandsversion (Attribut `qeVersion`) und Umrechnung älterer Zustände beim Laden.
 - UI: `PluginEditor`, `UnitPanel`, `Widgets.h` (Echo-Anzeige, Modulationsanzeige, Chips), `PadComponent.h`, `RoutingSelector.h`, `UiCommon.h`, `UiExtras.h` (Tooltips, Pegel).
-- Audio-Thread: keine Allokation, keine Locks, kein Logging; Denormals werden abgefangen; alle Parameter geglättet. Latenz 0. Mono- und Stereo-Bus (Mono läuft intern stereo und wird heruntergemischt). Tempo-Sync über den Host-Playhead (Standard 120 BPM ohne Host).
-- CPU: Worst Case (4 Einheiten parallel, Filter, Modulation, Reflexionen) etwa 1,5-2 % eines Kerns bei 48 kHz und 6-8 % bei 192 kHz (einfacher Wanduhr-Benchmark, schwankt mit der Last der Maschine).
+- Audio-Thread: keine Allokation, keine Locks, kein Logging; Denormals werden abgefangen (die Engine setzt FTZ/DAZ selbst); NaN/Inf vom Host wird zu Stille; alle Parameter geglättet. Ausgang unabhängig von der Blockgröße des Hosts (Steuerraster an der absoluten Sample-Position). Tail-Länge wird aus Zeiten, Feedback und Filtern berechnet (unendlich bei Dauerschwingung, Freeze oder Noise). Latenz 0. Mono- und Stereo-Bus (Mono läuft intern stereo und wird heruntergemischt). Tempo-Sync über den Host-Playhead (Standard 120 BPM ohne Host).
+- CPU (Thread-CPU-Zeit, `QuadEchoTests --harness bench`): Standardeinstellungen etwa 2,3 % der Blockzeit bei 48 kHz und 6 % bei 192 kHz (Block 32); Worst Case (alles an) etwa 7 % bzw. 18 %. Details, Messmethode und DSP-Audit: `SPEC.md`, `AUDIT.md`.

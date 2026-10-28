@@ -194,7 +194,7 @@ void testFuzz()
     auto ri = [&] (int n) { return rnd.nextInt (n); };
     for (double sr : { 44100.0, 192000.0 })
     {
-        QuadEngine e; e.prepare (sr);
+        auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
         EngineSettings s;
         bool ok = true;
         const int blocks[] = { 1, 7, 64, 333, 1024, 4096 };
@@ -269,7 +269,7 @@ void testParameterClicks()
 
     for (auto& p : params)
     {
-        QuadEngine e; e.prepare (sr);
+        auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
         auto base = singleUnitSettings (0);
         base.echo[0].feedback = 0.3f;
         base.echo[0].timeL = 100.0f;
@@ -289,7 +289,7 @@ void testAlgorithms()
     const double sr = 48000.0;
     for (int a = 0; a < kNumAlgorithms; ++a)
     {
-        QuadEngine e; e.prepare (sr);
+        auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
         EngineSettings s; s.algorithm = a;
         const float times[4] = { 100, 150, 200, 250 };
         for (int u = 0; u < kNumUnits; ++u) { s.echo[(size_t) u].on = true; s.echo[(size_t) u].timeL = times[u]; s.echo[(size_t) u].feedback = 0.3f; }
@@ -298,7 +298,7 @@ void testAlgorithms()
         check (peakAbs (out.l, (size_t) (0.05 * sr)) > 0.01f && peakAbs (out.r, (size_t) (0.05 * sr)) > 0.01f,
                std::string ("Algorithmus ") + kAlgorithms[a].name + " liefert Echo-Signal");
         // Mono-Eingang
-        QuadEngine e2; e2.prepare (sr);
+        auto e2Ptr = std::make_unique<QuadEngine>(); auto& e2 = *e2Ptr; e2.prepare (sr);
         auto mono = runEngine (e2, s, sine ((size_t) sr, sr, 300.0, 0.4f), 100);
         check (peakAbs (mono.l) > 0.05f, std::string ("Algorithmus ") + kAlgorithms[a].name + " liefert Signal bei Sinus");
     }
@@ -308,7 +308,7 @@ void testAlgorithmSwitch()
 {
     std::cout << "[Algorithmuswechsel]" << std::endl;
     const double sr = 48000.0;
-    QuadEngine e; e.prepare (sr);
+    auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
     EngineSettings s; s.globalMix = 0.8f;
     // Echo-Pegel 50 %: vier Einheiten in Serie mit vollem Pegel wuerden den Limiter hart treiben (steile Flanken sind dann kein Klick)
     for (int u = 0; u < kNumUnits; ++u) { s.echo[(size_t) u].on = true; s.echo[(size_t) u].timeL = 60.0f + 40.0f * (float) u; s.echo[(size_t) u].feedback = 0.4f; s.echo[(size_t) u].mix = 0.5f; }
@@ -493,7 +493,7 @@ void testNewFeatures()
 
     // Mute: keine Echos mehr, Original geht unveraendert durch
     {
-        QuadEngine e; e.prepare (sr);
+        auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
         auto s = singleUnitSettings (0); s.echo[0].mute = true; s.echo[0].feedback = 0.5f; s.softLimiter = false;
         auto o = runEngine (e, s, imp, 256);
         check (tail (o, (size_t) (0.05 * sr)) < 1e-4f, "Mute: keine Echos");
@@ -501,7 +501,7 @@ void testNewFeatures()
     }
     // Mute: Einheit stumm, auch in Serie (B bekommt nichts von A)
     {
-        QuadEngine e; e.prepare (sr);
+        auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
         EngineSettings s; s.algorithm = 0;
         s.echo[0].on = true; s.echo[0].mute = true; s.echo[0].timeL = 100.0f;
         s.echo[1].on = true; s.echo[1].timeL = 150.0f;
@@ -510,7 +510,7 @@ void testNewFeatures()
     }
     // Solo: nur B hoerbar (Echo bei 150 ms, nicht bei 100 ms)
     {
-        QuadEngine e; e.prepare (sr);
+        auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
         EngineSettings s; s.algorithm = 9;
         s.echo[0].on = true; s.echo[0].timeL = 100.0f; s.echo[0].mix = 1.0f; s.echo[0].feedback = 0.0f;
         s.echo[1].on = true; s.echo[1].timeL = 150.0f; s.echo[1].mix = 1.0f; s.echo[1].feedback = 0.0f; s.echo[1].solo = true;
@@ -521,7 +521,7 @@ void testNewFeatures()
     }
     // Ausgeschaltete Einheiten in Parallel verdoppeln das Dry nicht
     {
-        QuadEngine e; e.prepare (sr);
+        auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
         auto s = singleUnitSettings (0); s.echo[0].feedback = 0.0f; s.globalMix = 0.0f; s.softLimiter = false;
         auto o = runEngine (e, s, imp, 256);
         check (std::abs (o.l[100] - 1.0f) < 0.05f && std::abs (o.r[100] - 1.0f) < 0.05f, "Parallel nur A, Dry/Wet 0: Original unveraendert (L " + std::to_string (o.l[100]) + ")");
@@ -529,7 +529,7 @@ void testNewFeatures()
     }
     // Limiter: Spitzen bleiben unter 1.0, ohne Limiter nicht
     {
-        QuadEngine e1, e2; e1.prepare (sr); e2.prepare (sr);
+        auto e1Ptr = std::make_unique<QuadEngine>(), e2Ptr = std::make_unique<QuadEngine>(); auto& e1 = *e1Ptr; auto& e2 = *e2Ptr; e1.prepare (sr); e2.prepare (sr);
         auto s = singleUnitSettings (0); s.globalOutDb = 12.0f;
         auto loud = sine ((size_t) sr, sr, 300.0, 0.9f);
         s.softLimiter = true; s.limitDry = true;   // Limiter auf alles (ohne ON DRY bleibt ein heisses Original unangetastet, siehe K-g)
@@ -537,7 +537,7 @@ void testNewFeatures()
         s.softLimiter = false;
         const float pOff = peakAbs (runEngine (e2, s, loud, 256).l);
         check (pOn <= 1.0001f && pOff > 1.5f, "Soft-Limiter begrenzt auf 1.0 (an " + std::to_string (pOn) + ", aus " + std::to_string (pOff) + ")");
-        QuadEngine e3; e3.prepare (sr);
+        auto e3Ptr = std::make_unique<QuadEngine>(); auto& e3 = *e3Ptr; e3.prepare (sr);
         auto quiet = sine ((size_t) sr, sr, 300.0, 0.3f);
         EngineSettings s3; for (auto& ec : s3.echo) ec.on = false;
         const auto oq = runEngine (e3, s3, quiet, 256);
@@ -545,7 +545,7 @@ void testNewFeatures()
     }
     // Globale Feedback-Bremse
     {
-        QuadEngine e; e.prepare (sr);
+        auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
         auto s = singleUnitSettings (0); s.echo[0].mix = 1.0f; s.echo[0].feedback = 0.9f; s.echo[0].timeL = 100.0f;
         s.feedbackScale = 0.0f;
         auto o = runEngine (e, s, imp, 256);
@@ -556,7 +556,7 @@ void testNewFeatures()
     {
         auto run = [&] (bool placeDry)
         {
-            QuadEngine e; e.prepare (sr);
+            auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
             auto s = singleUnitSettings (0);
             s.globalMix = 0.0f; s.echo[0].feedback = 0.0f; s.echo[0].positionDry = placeDry; s.softLimiter = false;
             s.pos[0] = { -1.0f, 0.0f, 0.0f };
@@ -656,7 +656,7 @@ void testNewFeatures()
     {
         auto run = [&] (bool lpOn, bool inclDry, bool feedbackFilter)
         {
-            QuadEngine e; e.prepare (sr);
+            auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
             auto st = singleUnitSettings (0);
             st.softLimiter = false;
             st.echo[0].mix = 0.5f; st.echo[0].feedback = 0.0f; st.echo[0].timeL = 200.0f; st.echo[0].sync = false;
@@ -686,7 +686,7 @@ void testNewFeatures()
     {
         auto run = [&] (bool gfOn, bool skipFirst)
         {
-            QuadEngine e; e.prepare (sr);
+            auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
             auto st = singleUnitSettings (0);
             st.softLimiter = false;
             st.echo[0].mix = 1.0f; st.echo[0].feedback = 0.6f; st.echo[0].timeL = 100.0f; st.echo[0].sync = false;
@@ -714,7 +714,7 @@ void testNewFeatures()
     {
         auto run = [&] (NoiseSettings ns, const Sig& in, bool unitOn = false, size_t len = 0)
         {
-            QuadEngine e; e.prepare (sr);
+            auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
             auto st = singleUnitSettings (0);
             st.softLimiter = false;
             for (auto& ec : st.echo) ec.on = false;
@@ -900,7 +900,7 @@ void testMixFreezeDuck()
     {
         auto run = [&] (float gMix)
         {
-            QuadEngine e; e.prepare (sr);
+            auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
             auto s = singleUnitSettings (0);
             s.globalMix = gMix; s.softLimiter = false; s.earlyReflections = false;
             s.echo[0].feedback = 0.0f; s.echo[0].sync = false; s.echo[0].timeL = 100.0f;
@@ -912,7 +912,7 @@ void testMixFreezeDuck()
     }
     // Kette A > B (Serial, C/D aus) bei 100 % Wet: Echos von A, B und A+B, kein Original
     {
-        QuadEngine e; e.prepare (sr);
+        auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
         EngineSettings s; s.algorithm = 0; s.globalMix = 1.0f; s.softLimiter = false; s.earlyReflections = false;
         s.echo[0].on = true; s.echo[0].sync = false; s.echo[0].timeL = 100.0f; s.echo[0].feedback = 0.0f;
         s.echo[1].on = true; s.echo[1].sync = false; s.echo[1].timeL = 150.0f; s.echo[1].feedback = 0.0f;
@@ -923,7 +923,7 @@ void testMixFreezeDuck()
     }
     // Gain on Dry wirkt weiterhin auf das Original am Ausgang
     {
-        QuadEngine e; e.prepare (sr);
+        auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
         auto s = singleUnitSettings (0);
         s.globalMix = 0.0f; s.softLimiter = false; s.echo[0].inGainDb = -6.0206f; s.echo[0].inGainOnDry = true;
         const auto o = runEngine (e, s, imp, 256);
@@ -976,7 +976,7 @@ void testMixFreezeDuck()
     {
         auto run = [&] (bool duck)
         {
-            QuadEngine e; e.prepare (sr);
+            auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
             auto s = singleUnitSettings (0);
             s.globalMix = 1.0f; s.softLimiter = false; s.earlyReflections = false;
             s.echo[0].feedback = 0.0f; s.echo[0].sync = false; s.echo[0].timeL = 300.0f;
@@ -1022,7 +1022,7 @@ void testMixFreezeDuck()
     {
         auto run = [&] (float phaseDeg)
         {
-            QuadEngine e; e.prepare (sr);
+            auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
             auto s = singleUnitSettings (0);
             s.globalMix = 1.0f; s.softLimiter = false; s.earlyReflections = false; s.pos[0] = { 0.0f, 0.3f, 0.0f };
             s.echo[0].feedback = 0.5f; s.echo[0].sync = false; s.echo[0].timeL = 50.0f;
@@ -1069,7 +1069,7 @@ void testPlacement()
         const double sr = 48000.0;
         auto dryLevel = [&] (bool placeA, bool distDelay, bool early)
         {
-            QuadEngine e; e.prepare (sr);
+            auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
             EngineSettings s; s.algorithm = 9; s.softLimiter = false; s.distanceDelay = distDelay; s.earlyReflections = early;
             for (int u = 0; u < 3; ++u)
             {
@@ -1095,7 +1095,7 @@ void testPlacement()
     // Im Klang: Serial mit D aus, C ganz links, D ganz rechts -> die Echos kommen links
     {
         const double sr = 48000.0;
-        QuadEngine e; e.prepare (sr);
+        auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
         EngineSettings s; s.algorithm = 0; s.globalMix = 1.0f; s.softLimiter = false; s.earlyReflections = false;
         for (int u = 0; u < 3; ++u) { s.echo[(size_t) u].on = true; s.echo[(size_t) u].sync = false; s.echo[(size_t) u].timeL = 60.0f; s.echo[(size_t) u].feedback = 0.0f; }
         s.echo[3].on = false;
@@ -1124,7 +1124,7 @@ void testAuditFixes()
             in.l.resize (n, 0.0f); in.r.resize (n, 0.0f);
             in.l[(size_t) (0.2 * sr)] = bad;
             in.l[(size_t) (1.0 * sr)] = in.r[(size_t) (1.0 * sr)] = 0.5f;
-            QuadEngine e; e.prepare (sr);
+            auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
             const auto out = runEngine (e, s, in, 512);
             check (finite (out, 10.0f), std::string ("A1: Ausgang endlich trotz ") + (std::isnan (bad) ? "NaN" : "Inf") + " im Eingang");
             check (peakAbs (out.l, (size_t) (1.05 * sr), n) > 0.01f, "A1: nach dem Fehler kommen wieder Echos");
@@ -1134,7 +1134,7 @@ void testAuditFixes()
     // B1: Ausschalten einer Einheit darf keinen Block um ein Vielfaches verlaengern (192 kHz, Block 32, CPU-Zeit des Threads)
     {
         const double fs = 192000.0;
-        QuadEngine e; e.prepare (fs);
+        auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (fs);
         EngineSettings s = harness::worstCase();
         const size_t n = (size_t) (3.0 * fs);
         auto io = noise (n, 0.3f, 3);
@@ -1158,7 +1158,7 @@ void testAuditFixes()
         {
             if (c.name != "feat_noise_into" && c.name != "feat_gfilter" && c.name != "algo01_stereo") continue;
             const auto in = harness::stimulus (2, sr);
-            QuadEngine e; e.prepare (sr);
+            auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
             const auto a1 = runEngine (e, c.s, in, 512, c.bpm, c.mut);
             e.reset();
             const auto a2 = runEngine (e, c.s, in, 512, c.bpm, c.mut);
@@ -1176,7 +1176,7 @@ void testAuditFixes()
         s.globalMix = 1.0f;
         s.echo[0].feedback = 0.8f; s.echo[0].timeL = 1000.0f;
         const double tail = tailSeconds (s, 120.0, sr);
-        QuadEngine e; e.prepare (sr);
+        auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
         const size_t n = (size_t) ((std::isfinite (tail) ? tail : 10.0) * sr) + (size_t) sr;
         auto out = runEngine (e, s, impulse (n, 0), 512);
         const float after = peakAbs (out.l, (size_t) (tail * sr), n);
@@ -1197,24 +1197,24 @@ void testAuditFixes()
         auto s = singleUnitSettings (0);
         s.globalMix = 0.0f; s.softLimiter = true;
         const auto hot = sine ((size_t) sr, sr, 440.0, 0.95f);
-        QuadEngine e1; e1.prepare (sr);
+        auto e1Ptr = std::make_unique<QuadEngine>(); auto& e1 = *e1Ptr; e1.prepare (sr);
         const auto o1 = runEngine (e1, s, hot, 512);
         check (std::memcmp (o1.l.data(), hot.l.data(), hot.l.size() * sizeof (float)) == 0,
                "K-g: Limiter ohne ON DRY laesst ein heisses Original (0,95) bitgenau durch (Spitze " + std::to_string (peakAbs (o1.l)) + ")");
         s.limitDry = true;
-        QuadEngine e2; e2.prepare (sr);
+        auto e2Ptr = std::make_unique<QuadEngine>(); auto& e2 = *e2Ptr; e2.prepare (sr);
         check (std::abs (peakAbs (runEngine (e2, s, hot, 512).l) - 0.927f) < 0.002f, "K-g: mit ON DRY wirkt der Limiter wie bisher auf das Original");
         auto w = singleUnitSettings (0);
         w.echo[0].feedback = 0.9f; w.echo[0].timeL = 50.0f; w.globalMix = 0.5f;
-        QuadEngine e3; e3.prepare (sr);
+        auto e3Ptr = std::make_unique<QuadEngine>(); auto& e3 = *e3Ptr; e3.prepare (sr);
         check (peakAbs (runEngine (e3, w, sine ((size_t) (2 * sr), sr, 220.0, 0.9f), 512).l) <= 1.0001f,
                "K-g: Original plus Echos: Summe bleibt unter 0 dBFS");
         auto hotOut = w; hotOut.globalOutDb = 12.0f; hotOut.globalMix = 0.3f;
         const auto hin = sine ((size_t) (2 * sr), sr, 220.0, 0.9f);
-        QuadEngine e4; e4.prepare (sr);
+        auto e4Ptr = std::make_unique<QuadEngine>(); auto& e4 = *e4Ptr; e4.prepare (sr);
         const auto o4 = runEngine (e4, hotOut, hin, 512);
         auto dryOnly = hotOut; dryOnly.echo[0].on = false;
-        QuadEngine e5; e5.prepare (sr);
+        auto e5Ptr = std::make_unique<QuadEngine>(); auto& e5 = *e5Ptr; e5.prepare (sr);
         const auto o5 = runEngine (e5, dryOnly, hin, 512);
         check (peakAbs (o4.l) <= std::max (1.0f, peakAbs (o5.l)) + 1.0e-4f,
                "K-g: Original selbst ueber 0 dBFS: Summe nie lauter als das Original (" + std::to_string (peakAbs (o4.l)) + " / " + std::to_string (peakAbs (o5.l)) + ")");
@@ -1252,17 +1252,17 @@ void testAuditFixes()
         auto s = singleUnitSettings (0);
         s.softLimiter = false; s.globalOutDb = 12.0f; s.globalMix = 0.7f;
         s.echo[0].feedback = 1.1f; s.echo[0].lpOn = true; s.echo[0].res = 1.0f; s.echo[0].lpBoost = 12.0f;
-        QuadEngine e; e.prepare (sr);
+        auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
         const float pk = peakAbs (runEngine (e, s, noise ((size_t) (3 * sr), 0.5f, 5), 512).l);
         check (pk <= 2.0f, "K-f: ohne Limiter Spitze hoechstens +6 dBFS (" + std::to_string (toDb (pk)) + " dBFS)");
         auto q = singleUnitSettings (0);
         q.softLimiter = false; q.globalMix = 0.0f; q.globalOutDb = 3.0f;
         const auto loud = sine ((size_t) sr, sr, 300.0, 1.0f);
-        QuadEngine e2; e2.prepare (sr);
+        auto e2Ptr = std::make_unique<QuadEngine>(); auto& e2 = *e2Ptr; e2.prepare (sr);
         const float pq = peakAbs (runEngine (e2, q, loud, 512).l);
         check (std::abs (pq - dbToGain (3.0f)) < 1.0e-3f, "K-f: +3 dBFS ohne Limiter bleibt unveraendert (" + std::to_string (toDb (pq)) + " dBFS)");
         auto h = q; h.softLimiter = true; h.limitDry = false; h.globalOutDb = 12.0f;   // Limiter nur auf Echos, Original +12 dB
-        QuadEngine e3; e3.prepare (sr);
+        auto e3Ptr = std::make_unique<QuadEngine>(); auto& e3 = *e3Ptr; e3.prepare (sr);
         const float ph = peakAbs (runEngine (e3, h, loud, 512).l);
         check (ph <= 2.0f, "K-f: Notbremse auch bei Limiter nur auf die Echos (" + std::to_string (toDb (ph)) + " dBFS)");
     }
@@ -1353,7 +1353,7 @@ void testAuditFixes()
         const auto in2 = harness::stimulus (2, sr);
         auto renderPlaying = [&] (int block)
         {
-            QuadEngine e; e.prepare (sr);
+            auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
             Sig o = in2;
             for (size_t pos = 0; pos < in2.l.size(); pos += (size_t) block)
             {
@@ -1379,7 +1379,7 @@ void testAuditFixes()
             _mm_setcsr (ftz ? (old | 0x8040u) : (old & ~0x8040u));
             auto s = harness::worstCase();
             s.noise.on = false;
-            QuadEngine e; e.prepare (sr);
+            auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
             const size_t n = (size_t) (25.0 * sr);
             auto io = impulse (n, 100);
             for (size_t pos = 0; pos < n; pos += 512)
@@ -1398,7 +1398,7 @@ void testAuditFixes()
     {
         auto render = [] (const harness::Case& c, const Sig& in, double fs, const std::function<int (size_t)>& next)
         {
-            QuadEngine e; e.prepare (fs);
+            auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (fs);
             Sig out = in;
             size_t pos = 0, k = 0;
             while (pos < in.l.size())
@@ -1438,7 +1438,7 @@ void benchmark()
     std::cout << "[CPU-Last, Worst Case: 4 Einheiten parallel, Filter, Modulation, Reflexionen]" << std::endl;
     for (double sr : { 48000.0, 192000.0 })
     {
-        QuadEngine e; e.prepare (sr);
+        auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
         EngineSettings s; s.algorithm = 9;
         for (int u = 0; u < kNumUnits; ++u)
         {
@@ -1465,7 +1465,7 @@ void benchmarkDetail()
     const auto in = noise ((size_t) (seconds * sr), 0.3f);
     auto measure = [&] (const char* name, const std::function<void (EngineSettings&)>& setup)
     {
-        QuadEngine e; e.prepare (sr);
+        auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
         EngineSettings s; s.algorithm = 9;
         for (auto& ec : s.echo) ec.on = false;
         setup (s);
@@ -1528,12 +1528,12 @@ void renderAll (const juce::File& dir)
             if (variant == 1) { c.mode = PingPong; c.link = false; c.timeR = c.timeL * 0.75f; c.lpOn = true; c.lpHz = 3000.0f; }
             if (variant == 2) { c.mode = MidSide; c.delayDepth = 0.6f; c.rateHz = 0.7f; c.wave = Triangle; c.sync = true; c.divL = 8; }
             s.pos[(size_t) u] = { -0.5f + 0.33f * (float) u, 0.1f, 0 };
-            QuadEngine e; e.prepare (sr);
+            auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
             const std::string name = std::string ("unit_") + (char) ('A' + u) + "_v" + std::to_string (variant);
             auto o1 = runEngine (e, s, imp, 512);
             check (finite (o1, 10.0f) && peakAbs (o1.l, 2000) > 0.001f, name + " Impuls liefert Signal");
             writeWav (dir.getChildFile (name + "_impulse.wav"), o1, sr); ++files;
-            QuadEngine e2; e2.prepare (sr);
+            auto e2Ptr = std::make_unique<QuadEngine>(); auto& e2 = *e2Ptr; e2.prepare (sr);
             writeWav (dir.getChildFile (name + "_pluck.wav"), runEngine (e2, s, plk, 512), sr); ++files;
         }
     }
@@ -1552,11 +1552,11 @@ void renderAll (const juce::File& dir)
         }
         char nm[64]; std::snprintf (nm, sizeof nm, "algo_%02d_%s", a + 1, kAlgorithms[a].name);
         std::string name (nm); for (auto& ch : name) if (ch == '+') ch = '_'; else if (ch == ' ') ch = '_';
-        QuadEngine e; e.prepare (sr);
+        auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
         auto o = runEngine (e, s, imp, 512);
         check (finite (o, 10.0f) && peakAbs (o.l, 2000) > 0.001f && peakAbs (o.r, 2000) > 0.001f, name + " Impuls liefert Signal (L " + std::to_string (peakAbs (o.l, 2000)) + ", R " + std::to_string (peakAbs (o.r, 2000)) + ", max " + std::to_string (peakAbs (o.l)) + ")");
         writeWav (dir.getChildFile (name + "_impulse.wav"), o, sr); ++files;
-        QuadEngine e2; e2.prepare (sr);
+        auto e2Ptr = std::make_unique<QuadEngine>(); auto& e2 = *e2Ptr; e2.prepare (sr);
         writeWav (dir.getChildFile (name + "_pluck.wav"), runEngine (e2, s, plk, 512), sr); ++files;
     }
 
@@ -1571,12 +1571,12 @@ void renderAll (const juce::File& dir)
         auto s = singleUnitSettings (0);
         s.echo[0].feedback = 0.45f; s.echo[0].timeL = 250.0f; s.echo[0].mix = 0.7f;
         s.pos[0] = p.p;
-        QuadEngine e; e.prepare (sr);
+        auto ePtr = std::make_unique<QuadEngine>(); auto& e = *ePtr; e.prepare (sr);
         auto o = runEngine (e, s, plk, 512);
         check (finite (o, 10.0f) && peakAbs (o.l) + peakAbs (o.r) > 0.01f, std::string ("Position ") + p.name + " liefert Signal");
         writeWav (dir.getChildFile (std::string ("pos_") + p.name + "_pluck.wav"), o, sr); ++files;
         auto s2 = s; s2.distanceDelay = true;
-        QuadEngine e2; e2.prepare (sr);
+        auto e2Ptr = std::make_unique<QuadEngine>(); auto& e2 = *e2Ptr; e2.prepare (sr);
         writeWav (dir.getChildFile (std::string ("pos_") + p.name + "_impulse_distdelay.wav"), runEngine (e2, s2, imp, 512), sr); ++files;
     }
     std::cout << "  " << files << " WAV-Dateien geschrieben" << std::endl;
