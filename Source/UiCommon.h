@@ -360,7 +360,7 @@ inline juce::String fmtMs (double v) { return v < 100.0 ? juce::String (v, 1) + 
 inline juce::String fmtDb (double v) { return juce::String (v, 1) + " dB"; }
 inline juce::String fmtPct (double v) { return juce::String (v * 100.0, 0) + " %"; }
 inline juce::String fmtPctRaw (double v) { return juce::String (v, 1) + " %"; }
-inline juce::String fmtHz (double v) { return v >= 1000.0 ? juce::String (v / 1000.0, 2) + " kHz" : juce::String (v, v < 100.0 ? 1 : 0) + " Hz"; }
+inline juce::String fmtHz (double v) { return v >= 1000.0 ? juce::String (v / 1000.0, 3) + " kHz" : juce::String (v, v < 100.0 ? 2 : 1) + " Hz"; }
 inline juce::String fmtDeg (double v) { return juce::String (v, 0) + juce::String::fromUTF8 ("\xc2\xb0"); }
 inline juce::String fmtNum (double v) { return juce::String (v, 2); }
 
