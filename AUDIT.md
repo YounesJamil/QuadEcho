@@ -1,4 +1,4 @@
-# QUAD ECHO – DSP-Audit, Phase 1 (Befunde)
+# QUAD ECHO – DSP-Audit (Befunde Phase 1, Umsetzung Phase 2)
 
 Stand: Code `36fbeea` (DSP unverändert seit Runde 3), gemessen am 2026-10-28 auf i5-13600KF, MSVC 14.50 Release.
 Grenzwerte: [SPEC.md](SPEC.md) (vom Nutzer freigegeben). Jede Zahl hier ist reproduzierbar:
@@ -18,7 +18,70 @@ die kein Vielfaches von 16 sind), ändert aber das Verhalten. **K** = klangverä
 
 ---
 
-## Übersicht: Spezifikation gegen Ist
+## Stand nach Phase 2 (Abnahme, 2026-10-28)
+
+Alle Befunde außer C8 (Selbstoszillation) und C13 (Nachdunkeln) sind umgesetzt; diese beiden warten auf eine
+Entscheidung (Geschmack). Messungen wie in Phase 1, auf dem Release-Build nach dem letzten Commit.
+
+| SPEC | Grenzwert | Phase 1 | jetzt | Status |
+|---|---|---|---|---|
+| 1 CPU Mittel (192 kHz/32, Worst Case) | ≤ 20 % | 17 % | 18,6 % (mit Fades 19,3 %) | ok |
+| 1 CPU p99 / p99,9 | ≤ 50 % / ≤ 75 % | 21–26 % / 30–32 % | 32–34 % / 37–38 % | ok |
+| 1 Ereignis-Block | ≤ 100 % | 734 % | 63 % | ok (B1) |
+| 1 Speicher anfordern im Audio-Thread | nie | 0 | 0 | ok |
+| 2 ganzzahlige Verzögerung | ≤ −120 dBFS | −128 … −143 | −128 … −141 | ok |
+| 2 gebrochene Verzögerung | ≤ −110 dBFS | −67 | −140 | ok (C5) |
+| 2 moduliert | ≤ −90 dBFS | −39 … −84 | −105 … −144 | ok (C5, C6) |
+| 2 Repitch | ≤ −90 dBFS | −11 | −141 | ok (C1) |
+| 3 zwei Renders | bitgenau | 804/804 | 852/852 | ok |
+| 3 nach `reset()`/`prepare()` | bitgenau | 132/134 | 142/142 | ok (A4) |
+| 3 Blockgrößen 1/32/64/441/4096/wechselnd | bitgenau | 86–104/104 | 112/112 (48 und 192 kHz) | ok (A2, A3) |
+| 3 Delay-Zeit nach Sprung | ±0,5 Sample | bis 1200 Samples daneben | < 0,05 Samples | ok (C1) |
+| 4 Latenz 0, Mix 0 bitgenau | bitgenau | bitgenau | bitgenau (Test) | ok |
+| 5 NaN/Inf im Eingang | endlich, erholt sich | dauerhaft NaN | 0 nicht-endliche Samples, Echos kommen wieder | ok (A1) |
+| 5 Ausgang mit Limiter | ≤ 0 dBFS | 0,0 dBFS | 0,0 dBFS (ON DRY an); ohne ON DRY nie über dem Original | ok (g) |
+| 5 Ausgang extrem | ≤ +6 dBFS | +14,3 dBFS | +6,0 dBFS (mit und ohne Limiter) | ok (C9) |
+| 5 Denormals ohne FTZ | ≤ 1,5 × | 2,15 × | 0,99 × | ok (C10) |
+| 5 Tail-Länge | berechnet | fest 10 s | berechnet, unendlich bei Dauerschwingung | ok (A5) |
+| 6 ASan | ohne Befund | ohne Befund | ohne Befund (Tests, Audit, Baseline) | ok |
+| 6 UBSan | ohne Befund | 2 Befunde (NaN-Fall) | 0 Befunde | ok |
+| 6 pluginval 10 Debug + Release | grün | grün | grün (auch mit neuem Parameter) | ok |
+
+Weitere Messwerte nach Phase 2:
+- Aliasing (7 kHz, 48 kHz): Drive 0 / −6 dBFS −67 … −46 → −135 … −75 dBc; Drive +12 dB erstes Echo −45 → −86 dBc;
+  Drive +24 dB / −20 dBFS −15 → −30 dBc; Drive +24 dB / −6 dBFS −11 → −18 dBc (Rest wie bei 96 kHz; nur 4×
+  würde hier weiter helfen).
+- Schleifen-Sättigung bei −24 dB Input Gain (gleicher Pegel in der Schleife): k3 −23,5 → −164 dB.
+- CPU 48 kHz durch das Oversampling: Standard 1110 → 1800 Zyklen/Sample (2,5 % der Blockzeit bei Block 32),
+  Worst Case 7,1 %. 96/192 kHz ohne Oversampling.
+- Baseline: v1 (Phase 0) → v5 (`tests/baseline/manifest-v5.tsv`, 852 Renders). Jede Klangänderung hat eine eigene
+  Version; die Commit-Texte nennen, welche Renders sich um wie viel geändert haben.
+
+### Commits Phase 2
+| Commit | Befund | Art | Inhalt |
+|---|---|---|---|
+| dd12d14 | A1 | N | NaN/Inf am Eingang → 0, Schutz in Schleife und Ausgang |
+| 45c694f | B1 | R | Leitungen beim Ausschalten verteilt löschen |
+| 9d460d3 | A2/A3 | N | Steuerraster an der absoluten Sample-Position (auch Spatializer, globaler Filter, Noise) |
+| 129ff4d | A4 | N | Noise-Seeds in `reset()` |
+| 36b91bb | A5 | N | Tail-Länge berechnet |
+| fbefa71 | B2/B4 | R | LFO bei „aus“ nicht rechnen, ungenutzte Konstante |
+| b28cd43 | B3 | R | `__restrict` in Mischschleifen (Gewinn ~1 %) |
+| c8ee130 | g / C11 | K | Limiter wahlweise nur auf die Echos (Schalter ON DRY), Zustandsversion 6 |
+| ee7cede | a / C1 | K | Repitch in double, Baseline v2 |
+| 826cbf2, f14d83b | b / C5, C6 | K | Index, LFO, Glättung, Hüllkurve in double, Baseline v3 |
+| 940c4bc | f / C9 | K | Notbremse +6 dBFS |
+| 7d8ac15 | C2 | K | schwächere Schleifen-Sättigung unter 0 dB Input Gain, Baseline v4 |
+| a52340f | c / C3 | K | 2-faches Oversampling der Sättigungen (44,1/48 kHz), Baseline v5 |
+| c23f114 | h / C12 | K | LFO-Sync folgt der Songposition |
+| c920bb6 | C10 | N | Engine setzt FTZ/DAZ selbst |
+
+Noch offen: C8 (Selbstoszillation bei Resonanz/Boost), C13 (Hermite-Nachdunkeln) und die ungemessenen
+Vermutungen 12–15 (Abschnitt 8).
+
+---
+
+## Übersicht: Spezifikation gegen Ist (Phase 1, vor den Fixes)
 
 | SPEC | Grenzwert | Ist | Status |
 |---|---|---|---|

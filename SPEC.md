@@ -1,7 +1,8 @@
 # QUAD ECHO – DSP-Spezifikation (Audit Phase 0)
 
-**Status: Entwurf. Die Spalte „Vorschlag“ wartet auf Bestätigung.** Erst danach werden die Zahlen zu Tests,
-die rot werden dürfen. Bis dahin ändert sich am DSP nichts.
+**Status: freigegeben (2026-10-28).** Die Spalte „Vorschlag“ gilt als Grenzwert. Die Spalte „Ist“ zeigt den Stand
+vor dem Audit; den Stand danach zeigt [AUDIT.md](AUDIT.md), Abschnitt „Stand nach Phase 2“. Aktuelle Baseline: v5
+(`tests/baseline/manifest-v5.tsv`).
 
 Code-Stand: Commit `36fbeea` (Runde 3). Messrechner: i5-13600KF, Windows 11, MSVC 14.50, Release-Build.
 Alle Ist-Werte stammen aus dem Harness (`tests/Harness.cpp`) und dem Python-Referenzmodell
