@@ -1244,6 +1244,26 @@ void testAuditFixes()
                + std::to_string (ist - sollF) + ", Soll " + std::to_string (soll) + ")");
     }
 
+    // K-f: ohne Limiter hoechstens +6 dBFS (Notbremse), darunter bis +4 dBFS unveraendert
+    {
+        auto s = singleUnitSettings (0);
+        s.softLimiter = false; s.globalOutDb = 12.0f; s.globalMix = 0.7f;
+        s.echo[0].feedback = 1.1f; s.echo[0].lpOn = true; s.echo[0].res = 1.0f; s.echo[0].lpBoost = 12.0f;
+        QuadEngine e; e.prepare (sr);
+        const float pk = peakAbs (runEngine (e, s, noise ((size_t) (3 * sr), 0.5f, 5), 512).l);
+        check (pk <= 2.0f, "K-f: ohne Limiter Spitze hoechstens +6 dBFS (" + std::to_string (toDb (pk)) + " dBFS)");
+        auto q = singleUnitSettings (0);
+        q.softLimiter = false; q.globalMix = 0.0f; q.globalOutDb = 3.0f;
+        const auto loud = sine ((size_t) sr, sr, 300.0, 1.0f);
+        QuadEngine e2; e2.prepare (sr);
+        const float pq = peakAbs (runEngine (e2, q, loud, 512).l);
+        check (std::abs (pq - dbToGain (3.0f)) < 1.0e-3f, "K-f: +3 dBFS ohne Limiter bleibt unveraendert (" + std::to_string (toDb (pq)) + " dBFS)");
+        auto h = q; h.softLimiter = true; h.limitDry = false; h.globalOutDb = 12.0f;   // Limiter nur auf Echos, Original +12 dB
+        QuadEngine e3; e3.prepare (sr);
+        const float ph = peakAbs (runEngine (e3, h, loud, 512).l);
+        check (ph <= 2.0f, "K-f: Notbremse auch bei Limiter nur auf die Echos (" + std::to_string (toDb (ph)) + " dBFS)");
+    }
+
     // A2/A3: bei konstanten Parametern ist der Ausgang unabhaengig von der Blockgroesse (auch 1, 441, wechselnd)
     {
         auto render = [] (const harness::Case& c, const Sig& in, double fs, const std::function<int (size_t)>& next)

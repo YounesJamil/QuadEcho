@@ -14,6 +14,17 @@ inline float softLimit (float x)
     return x < 0.0f ? -y : y;
 }
 
+// Notbremse hinter allem (auch bei Limiter nur auf die Echos und heissem Original): bis 1,6 (+4 dBFS) unveraendert,
+// darueber weich gegen 2,0 (+6 dBFS)
+inline float safetyLimit (float x)
+{
+    constexpr float knee = 1.6f, range = 0.4f;
+    const float a = std::abs (x);
+    if (a <= knee) return x;
+    const float y = knee + range * std::tanh ((a - knee) / range);
+    return x < 0.0f ? -y : y;
+}
+
 // Limiter nur auf die Echos: das Original d bleibt unangetastet, die Echos werden in den verbleibenden Platz gedrueckt.
 // Das Knie wandert mit dem Original mit (mindestens |d|): liegt das Original unter dem Knie 0,8, ist es genau
 // softLimit (Summe); darueber bleibt die Summe unter 1,0 bzw. nie ueber dem Original, falls dieses selbst heisser ist.
@@ -463,6 +474,8 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
             if (s.limitDry) { ol = softLimit (ol); orr = softLimit (orr); }
             else            { ol = softLimitEchoes (dl * outGa[ui], ol); orr = softLimitEchoes (dr * outGa[ui], orr); }
         }
+        ol = safetyLimit (ol);
+        orr = safetyLimit (orr);
         // Letzte Absicherung (z. B. NaN aus einem Parameter): nie NaN/Inf ausgeben, danach alles neu aufsetzen
         if (! std::isfinite (ol) || ! std::isfinite (orr)) { ol = orr = 0.0f; poisoned = true; }
         l[i] = ol;
