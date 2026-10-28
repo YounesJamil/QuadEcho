@@ -58,5 +58,6 @@ private:
     std::atomic<double> posPub { 0.0 };
     int lastTransition = -1;
     bool initialised = false;
+    bool poisoned = false;   // ein Schleifen-Sample war nicht endlich: am Blockende neu aufsetzen
 };
 } // namespace qe

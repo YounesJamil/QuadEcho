@@ -89,6 +89,12 @@ void QuadEngine::computeDuck (int n, const DuckSettings& d, float* gain)
 
 void QuadEngine::process (float* l, float* r, int n, const EngineSettings& s, double bpm)
 {
+    // Nicht-endliche Samples vom Host (NaN, Inf) wuerden Delay-Leitungen und Filter dauerhaft vergiften: als Stille behandeln
+    for (int i = 0; i < n; ++i)
+    {
+        if (! std::isfinite (l[i])) l[i] = 0.0f;
+        if (! std::isfinite (r[i])) r[i] = 0.0f;
+    }
     for (int pos = 0; pos < n; pos += kChunk)
         processChunk (l + pos, r + pos, std::min (kChunk, n - pos), s, bpm);
 }
@@ -426,11 +432,18 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
         float ol = (dl + busL[ui]) * outGa[ui];
         float orr = (dr + busR[ui]) * outGa[ui];
         if (s.softLimiter) { ol = softLimit (ol); orr = softLimit (orr); }
+        // Letzte Absicherung (z. B. NaN aus einem Parameter): nie NaN/Inf ausgeben, danach alles neu aufsetzen
+        if (! std::isfinite (ol) || ! std::isfinite (orr)) { ol = orr = 0.0f; poisoned = true; }
         l[i] = ol;
         r[i] = orr;
         masterPk = std::max ({ masterPk, std::abs (ol), std::abs (orr) });
     }
     if (masterPk > masterPeak.load (std::memory_order_relaxed))
         masterPeak.store (masterPk, std::memory_order_relaxed);
+    if (poisoned)
+    {
+        reset();
+        poisoned = false;
+    }
 }
 } // namespace qe

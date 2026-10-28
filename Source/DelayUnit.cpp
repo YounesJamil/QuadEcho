@@ -264,6 +264,7 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
             float w0 = x0 + fbNow * f0, w1 = x1 + fbNow * f1;
             if (std::abs (w0) < 1e-18f) w0 = 0.0f;
             if (std::abs (w1) < 1e-18f) w1 = 0.0f;
+            if (! std::isfinite (w0) || ! std::isfinite (w1)) { w0 = w1 = 0.0f; poisoned = true; }   // Schleife nie vergiften
             line[0].dl.push (w0);
             line[1].dl.push (w1);
             line[0].first.push (x0);
@@ -300,6 +301,12 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
             }
         }
         driveSm.skip (len);
+    }
+    // Nicht-endlicher Zustand (Huellkurve, Modulation, Filter) z. B. durch einen NaN-Parameter: Einheit neu aufsetzen
+    if (poisoned || ! std::isfinite (env) || ! std::isfinite (modSm[0] + modSm[1] + fModSm))
+    {
+        reset();
+        poisoned = false;
     }
 }
 } // namespace qe

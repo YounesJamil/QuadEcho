@@ -68,5 +68,6 @@ private:
     float gate = 1.0f;
     juce::SmoothedValue<float> mixSm, outSm;
     bool initialised = false;
+    bool poisoned = false;   // ein Ausgangs-Sample war nicht endlich: am Ende des Chunks alles zuruecksetzen
 };
 } // namespace qe

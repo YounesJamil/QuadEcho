@@ -5,6 +5,7 @@
 #include "../Source/StateMigration.h"
 #include "TestUtil.h"
 #include "Harness.h"
+#include "HarnessCommon.h"
 
 using namespace qetest;
 
@@ -1102,6 +1103,31 @@ void testPlacement()
     }
 }
 
+// ---------------------------------------------------------------------------
+// Regressionstests zu den Befunden in AUDIT.md (je Befund ein Abschnitt)
+void testAuditFixes()
+{
+    std::cout << "[Audit-Befunde]" << std::endl;
+    const double sr = 48000.0;
+
+    // A1: ein nicht-endliches Eingangs-Sample darf den Ausgang nicht dauerhaft vergiften
+    {
+        auto s = harness::worstCase();
+        for (float bad : { std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity() })
+        {
+            const size_t n = (size_t) (2.0 * sr);
+            auto in = noise ((size_t) (0.3 * sr), 0.1f, 9);
+            in.l.resize (n, 0.0f); in.r.resize (n, 0.0f);
+            in.l[(size_t) (0.2 * sr)] = bad;
+            in.l[(size_t) (1.0 * sr)] = in.r[(size_t) (1.0 * sr)] = 0.5f;
+            QuadEngine e; e.prepare (sr);
+            const auto out = runEngine (e, s, in, 512);
+            check (finite (out, 10.0f), std::string ("A1: Ausgang endlich trotz ") + (std::isnan (bad) ? "NaN" : "Inf") + " im Eingang");
+            check (peakAbs (out.l, (size_t) (1.05 * sr), n) > 0.01f, "A1: nach dem Fehler kommen wieder Echos");
+        }
+    }
+}
+
 void benchmark()
 {
     std::cout << "[CPU-Last, Worst Case: 4 Einheiten parallel, Filter, Modulation, Reflexionen]" << std::endl;
@@ -1271,6 +1297,7 @@ int main (int argc, char** argv)
     testFuzz();
     testMixFreezeDuck();
     testPlacement();
+    testAuditFixes();
     benchmark();
     benchmarkDetail();
     renderAll (outDir);
