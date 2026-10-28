@@ -12,8 +12,45 @@ namespace qe
 // 4 = getrennte Resonanz fuer HP und LP (res = LP, hpRes neu), Offset auch fuer L
 // 5 = Sync-Modus je Kanal (syncMode = L, syncModeR neu)
 // 6 = Limiter wahlweise nur auf die Echos (limitDry neu, Standard aus); aeltere Zustaende behalten "auf alles"
-constexpr int kStateVersion = 6;
+// 7 = Notenwerte ab einem Takt als Taktzahl (1, 1.5, 2 .. 24 statt 1/1, 2/1, 4/1): andere Indizes in kNoteDivs
+constexpr int kStateVersion = 7;
 inline const char* const kStateVersionAttr = "qeVersion";
+
+namespace detail
+{
+// Notenwert-Liste bis Zustandsversion 6 (Index -> Schlaege, Familie 0 gerade / 1 triolisch / 2 punktiert)
+struct OldDiv { double beats; int family; };
+inline constexpr OldDiv kOldDivs[17] = {
+    { 0.125, 0 }, { 1.0 / 6.0, 1 }, { 0.25, 0 }, { 0.375, 2 }, { 1.0 / 3.0, 1 }, { 0.5, 0 }, { 0.75, 2 }, { 2.0 / 3.0, 1 },
+    { 1.0, 0 }, { 1.5, 2 }, { 4.0 / 3.0, 1 }, { 2.0, 0 }, { 3.0, 2 }, { 8.0 / 3.0, 1 }, { 4.0, 0 }, { 8.0, 0 }, { 16.0, 0 } };
+
+inline int oldNoteFamily (int i) { return kOldDivs[std::min (std::max (i, 0), 16)].family; }
+
+// divInMode mit der alten Liste: welcher Notenwert bei diesem Sync-Modus tatsaechlich klang
+inline int oldDivInMode (int div, int mode)
+{
+    div = std::min (std::max (div, 0), 16);
+    const int fam = familyOfMode (mode);
+    if (kOldDivs[div].family == fam) return div;
+    auto base = [] (int i) { const auto& d = kOldDivs[i]; return d.family == 1 ? d.beats * 1.5 : (d.family == 2 ? d.beats / 1.5 : d.beats); };
+    int best = div;
+    double bestDist = 1.0e9;
+    for (int i = 0; i < 17; ++i)
+        if (kOldDivs[i].family == fam)
+        {
+            const double d = std::abs (std::log (base (i) / base (div)));
+            if (d < bestDist) { bestDist = d; best = i; }
+        }
+    return best;
+}
+
+// alter Index -> neuer Index (bis 1/1 gleich; 2/1 = "2", 4/1 = "4")
+inline int remapOldDiv (int i)
+{
+    i = std::min (std::max (i, 0), 16);
+    return i <= 14 ? i : (i == 15 ? 16 : 18);
+}
+} // namespace detail
 
 // Rechnet einen Zustand der Version 1 so um, dass das Verhaeltnis von Original zu Echos ungefaehr
 // erhalten bleibt. Alt (Einheit u mit Mix m, globaler Mix G, Winkel = Wert * pi/2):
@@ -21,10 +58,11 @@ inline const char* const kStateVersionAttr = "qeVersion";
 // Neu (Echo-Pegel L_u, globaler Mix g):
 //   Original = cos g,                          Echo_u = sin g * L_u
 // Mit L_u = sin m_u / max(sin m) und tan g = Echo_max / Original.
-inline void migrateState (juce::XmlElement& xml)
+namespace detail
 {
-    const int version = xml.getIntAttribute (kStateVersionAttr, 1);
-    if (version >= kStateVersion)
+inline void migrateToV6 (juce::XmlElement& xml, int version)
+{
+    if (version >= 6)
         return;
 
     auto find = [&xml] (const juce::String& id) -> juce::XmlElement*
@@ -83,7 +121,7 @@ inline void migrateState (juce::XmlElement& xml)
         for (int u = 0; u < 4; ++u)
         {
             const int div = (int) std::lround (value (juce::String (letters[u]) + "_divL", oldDefaultDiv[u]));
-            setValue (juce::String (letters[u]) + "_syncMode", (double) noteFamily (div));
+            setValue (juce::String (letters[u]) + "_syncMode", (double) oldNoteFamily (div));
         }
     }
     copySyncModeToR();
@@ -124,6 +162,53 @@ inline void migrateState (juce::XmlElement& xml)
     const double echo = std::sin (G) * sMax;
     setValue ("gMix", juce::jlimit (0.0, 1.0, std::atan2 (echo, original) / halfPi));
 
+    xml.setAttribute (kStateVersionAttr, kStateVersion);
+}
+
+// 6 -> 7: Notenwerte auf die neue Liste umrechnen. Delay-Sync behaelt genau den Wert, der vorher klang (auch im
+// Triplet-/Dotted-Modus, wo der naechstliegende Wert der Familie gilt), LFO-Sync die gleiche Zahl Schlaege.
+inline void remapNoteDivsV7 (juce::XmlElement& xml)
+{
+    auto find = [&xml] (const juce::String& id) -> juce::XmlElement*
+    {
+        for (auto* c : xml.getChildWithTagNameIterator ("PARAM"))
+            if (c->getStringAttribute ("id") == id) return c;
+        return nullptr;
+    };
+    auto remapParam = [&find] (const juce::String& id) { if (auto* e = find (id)) e->setAttribute ("value", (double) remapOldDiv ((int) std::lround (e->getDoubleAttribute ("value")))); };
+    static const char* const letters[4] = { "a", "b", "c", "d" };
+    for (int u = 0; u < 4; ++u)
+    {
+        const juce::String L (letters[u]);
+        for (int side = 0; side < 2; ++side)
+        {
+            auto* divE = find (L + (side == 0 ? "_divL" : "_divR"));
+            if (divE == nullptr) continue;
+            auto* modeE = find (L + (side == 0 ? "_syncMode" : "_syncModeR"));
+            const int oldDiv = (int) std::lround (divE->getDoubleAttribute ("value"));
+            const int mode = modeE != nullptr ? (int) std::lround (modeE->getDoubleAttribute ("value")) : (int) Sync16th;
+            int newDiv = remapOldDiv (oldDiv);
+            if (mode != Sync16th)
+            {
+                const int want = remapOldDiv (oldDivInMode (oldDiv, mode));
+                if (divInMode (newDiv, mode) != want) newDiv = want;
+            }
+            divE->setAttribute ("value", (double) newDiv);
+        }
+        remapParam (L + "_lfoDiv");
+    }
+    remapParam ("gf_div");
+    remapParam ("nz_div");
+}
+} // namespace detail
+
+inline void migrateState (juce::XmlElement& xml)
+{
+    const int version = xml.getIntAttribute (kStateVersionAttr, 1);
+    if (version >= kStateVersion)
+        return;
+    detail::migrateToV6 (xml, version);   // rechnet mit der alten Notenwert-Liste
+    detail::remapNoteDivsV7 (xml);
     xml.setAttribute (kStateVersionAttr, kStateVersion);
 }
 } // namespace qe

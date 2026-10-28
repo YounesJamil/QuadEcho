@@ -44,11 +44,11 @@ public:
                 {
                     const double t = (double) k * (row == 0 ? tl : tr);
                     const float amp = std::pow (fb, (float) (k - 1));
-                    if (amp < 0.03f || t > 6000.0) break;
+                    if (amp < 0.03f || t > 4000.0 * qe::kMaxDelaySeconds) break;
                     ev.push_back ({ t, std::min (amp, 1.0f), row });
                 }
         }
-        // x-Achse in Takten des Host-Tempos: 1, 2, 4 oder 8 Takte, so dass die ersten vier Wiederholungen
+        // x-Achse in Takten des Host-Tempos: 1, 2, 4 .. 32 Takte, so dass die ersten vier Wiederholungen
         // hineinpassen. Bleibt stehen, solange sich die Delay-Zeit nur wenig aendert.
         const double barMs = 4.0 * 60000.0 / std::max (20.0, proc.getBpm());
         std::vector<double> times;
@@ -56,7 +56,7 @@ public:
         std::sort (times.begin(), times.end());
         const double need = times.empty() ? std::max (tl, tr) : times[std::min<size_t> (3, times.size() - 1)] * 1.05;
         int bars = 1;
-        while (bars < 8 && (double) bars * barMs < need) bars *= 2;
+        while (bars < 32 && (double) bars * barMs < need) bars *= 2;
         const double tMax = (double) bars * barMs;
 
         const bool dim = ! es.on || qe::isMuted (es);
@@ -101,7 +101,7 @@ public:
 
         // Taktnummern unter der Achse, rechts die Laenge
         g.setColour (ui::kDim);
-        for (int k = 0; k < bars; k += (bars > 4 ? 2 : 1))
+        for (int k = 0; k < bars; k += (bars > 4 ? bars / 4 : 1))
             g.drawText (juce::String (k + 1), (int) (x0 + w * (float) k / (float) bars) + 2, (int) (b.getBottom() + 1), 20, 14, juce::Justification::centredLeft);
         g.drawText (juce::String (bars) + (bars == 1 ? " bar" : " bars"), (int) (x0 + w - 60), (int) (b.getBottom() + 1), 60, 14, juce::Justification::centredRight);
         g.drawText (dim ? "unit silent" : (es.freeze ? "frozen" : "repeats"), (int) b.getX(), (int) (b.getY() - 18), (int) b.getWidth(), 14, juce::Justification::centredRight);

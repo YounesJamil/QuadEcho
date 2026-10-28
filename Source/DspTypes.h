@@ -9,15 +9,20 @@ namespace qe
 {
 constexpr int kNumUnits = 4;
 constexpr int kNumAlgorithms = 10;
-constexpr float kMaxDelaySeconds = 4.0f;
+constexpr float kMaxDelaySeconds = 16.0f;   // 8 Takte bei 120 BPM
+constexpr double kMaxDelayBeats = 32.0;      // der Delay-Regler zeigt Notenwerte bis 8 Takte
 
-struct NoteDiv { const char* name; double beats; };
+// Notenwerte fuer Delay-Sync und LFO-Sync. Ab einem Takt (4/4) als Zahl der Takte: 1, 1.5, 2 .. 24.
+// family: 0 gerade, 1 triolisch, 2 punktiert (1.5 Takte = punktierte Ganze). Seit Zustandsversion 7; vorher endete
+// die Liste mit 1/1, 2/1, 4/1 (Umrechnung in StateMigration.h).
+struct NoteDiv { const char* name; double beats; int family; };
 inline constexpr NoteDiv kNoteDivs[] = {
-    { "1/32", 0.125 }, { "1/16T", 1.0 / 6.0 }, { "1/16", 0.25 }, { "1/16.", 0.375 },
-    { "1/8T", 1.0 / 3.0 }, { "1/8", 0.5 }, { "1/8.", 0.75 }, { "1/4T", 2.0 / 3.0 },
-    { "1/4", 1.0 }, { "1/4.", 1.5 }, { "1/2T", 4.0 / 3.0 }, { "1/2", 2.0 },
-    { "1/2.", 3.0 }, { "1/1T", 8.0 / 3.0 }, { "1/1", 4.0 }, { "2/1", 8.0 }, { "4/1", 16.0 } };
-constexpr int kNumNoteDivs = 17;
+    { "1/32", 0.125, 0 }, { "1/16T", 1.0 / 6.0, 1 }, { "1/16", 0.25, 0 }, { "1/16.", 0.375, 2 },
+    { "1/8T", 1.0 / 3.0, 1 }, { "1/8", 0.5, 0 }, { "1/8.", 0.75, 2 }, { "1/4T", 2.0 / 3.0, 1 },
+    { "1/4", 1.0, 0 }, { "1/4.", 1.5, 2 }, { "1/2T", 4.0 / 3.0, 1 }, { "1/2", 2.0, 0 },
+    { "1/2.", 3.0, 2 }, { "1/1T", 8.0 / 3.0, 1 }, { "1", 4.0, 0 }, { "1.5", 6.0, 2 },
+    { "2", 8.0, 0 }, { "3", 12.0, 0 }, { "4", 16.0, 0 }, { "5", 20.0, 0 }, { "6", 24.0, 0 }, { "7", 28.0, 0 }, { "8", 32.0, 0 }, { "9", 36.0, 0 }, { "10", 40.0, 0 }, { "11", 44.0, 0 }, { "12", 48.0, 0 }, { "13", 52.0, 0 }, { "14", 56.0, 0 }, { "15", 60.0, 0 }, { "16", 64.0, 0 }, { "17", 68.0, 0 }, { "18", 72.0, 0 }, { "19", 76.0, 0 }, { "20", 80.0, 0 }, { "21", 84.0, 0 }, { "22", 88.0, 0 }, { "23", 92.0, 0 }, { "24", 96.0, 0 } };
+constexpr int kNumNoteDivs = 39;
 
 enum ChannelMode { Stereo = 0, PingPong, MidSide };
 enum Transition { Repitch = 0, Fade, Jump };
@@ -381,12 +386,7 @@ constexpr int kMaxSixteenths = 16;
 inline double sixteenthBeats (int n) { return 0.25 * (double) std::min (std::max (n, 1), kMaxSixteenths); }
 
 // Familie eines Notenwerts in kNoteDivs: 0 gerade, 1 triolisch ("T"), 2 punktiert (".")
-inline int noteFamily (int i)
-{
-    const char* name = kNoteDivs[std::min (std::max (i, 0), kNumNoteDivs - 1)].name;
-    const char last = name[std::strlen (name) - 1];
-    return last == 'T' ? 1 : (last == '.' ? 2 : 0);
-}
+inline int noteFamily (int i) { return kNoteDivs[std::min (std::max (i, 0), kNumNoteDivs - 1)].family; }
 inline int familyOfMode (int mode) { return mode == SyncTriplet ? 1 : (mode == SyncDotted ? 2 : 0); }
 
 // Grundnote (gerade) eines Notenwerts in Beats: 1/8T und 1/8. haben die Grundnote 1/8

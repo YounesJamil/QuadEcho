@@ -304,7 +304,7 @@ private:
         entries.clear();
         const int fam = qe::familyOfMode (mode);
         for (int i = 0; i < qe::kNumNoteDivs; ++i)
-            if (qe::noteFamily (i) == fam) entries.push_back (i);
+            if (qe::noteFamily (i) == fam && qe::kNoteDivs[i].beats <= qe::kMaxDelayBeats) entries.push_back (i);
         const int cur = qe::divInMode (div, mode), def = qe::divInMode ((int) divParam->convertFrom0to1 (divParam->getDefaultValue()), mode);
         auto posOf = [this] (int idx) { for (int k = 0; k < (int) entries.size(); ++k) if (entries[(size_t) k] == idx) return k; return 0; };
         updating = true;

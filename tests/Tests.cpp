@@ -1435,6 +1435,31 @@ void testAuditFixes()
                "K-d: Tail mit STABLE endlich, ohne unendlich");
     }
 
+    // Notenwerte in Takten (1, 1.5, 2 .. 24), Delay bis 16 s, Umrechnung alter Zustaende (Version 6 -> 7)
+    {
+        check (std::string (kNoteDivs[14].name) == "1" && std::string (kNoteDivs[15].name) == "1.5" && std::string (kNoteDivs[38].name) == "24"
+               && kNoteDivs[38].beats == 96.0, "Takte: Liste 1, 1.5, 2 .. 24");
+        check (divInMode (14, SyncDotted) == 15, "Takte: 1 Takt punktiert = 1.5");
+        auto s = singleUnitSettings (0);
+        s.echo[0].timeL = 12000.0f; s.echo[0].feedback = 0.0f; s.globalMix = 1.0f; s.softLimiter = false;
+        auto ePtr = std::make_unique<QuadEngine>(); ePtr->prepare (sr);
+        const auto o = runEngine (*ePtr, s, impulse ((size_t) (12.5 * sr), 100), 512);
+        check (argMaxAbs (o.l) == 100 + (size_t) (12.0 * sr), "Delay 12 s: Echo genau nach 12 s (Peak bei " + std::to_string (argMaxAbs (o.l)) + ")");
+        juce::XmlElement v6 ("STATE");
+        v6.setAttribute (kStateVersionAttr, 6);
+        auto add = [&v6] (const char* id, double v) { auto* e = v6.createNewChildElement ("PARAM"); e->setAttribute ("id", id); e->setAttribute ("value", v); };
+        add ("a_divL", 16.0); add ("a_syncMode", 0.0);       // 4/1 Notes
+        add ("b_divL", 14.0); add ("b_syncMode", 2.0);       // 1/1 Dotted: klang als 1/2.
+        add ("c_lfoDiv", 15.0);                              // 2/1
+        add ("gf_div", 16.0);                                // 4/1
+        migrateState (v6);
+        auto val = [&v6] (const char* id) { return (int) std::lround (v6.getChildByAttribute ("id", id)->getDoubleAttribute ("value")); };
+        check (val ("a_divL") == 18 && divInMode (val ("b_divL"), SyncDotted) == 12 && val ("c_lfoDiv") == 16 && val ("gf_div") == 18
+               && v6.getIntAttribute (kStateVersionAttr) == kStateVersion,
+               "Umrechnung 6 -> 7: 4/1 -> 4, 1/1 punktiert bleibt 1/2., 2/1 -> 2 (" + std::to_string (val ("a_divL")) + ", "
+               + std::to_string (val ("b_divL")) + ", " + std::to_string (val ("c_lfoDiv")) + ", " + std::to_string (val ("gf_div")) + ")");
+    }
+
     // A2/A3: bei konstanten Parametern ist der Ausgang unabhaengig von der Blockgroesse (auch 1, 441, wechselnd)
     {
         auto render = [] (const harness::Case& c, const Sig& in, double fs, const std::function<int (size_t)>& next)

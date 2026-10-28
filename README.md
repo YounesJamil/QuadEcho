@@ -176,8 +176,8 @@ Je Einheit (Präfix `a_` bis `d_`, 39 Parameter) und global (9 Parameter). Alle 
 | `solo` | Solo | an/aus | aus |
 | `sync` | Sync | an/aus | an |
 | `link` | R folgt L (in der UI: Knopf `LINK` leuchtet, wenn R frei ist) | an/aus | an (Single-Delay, Knopf aus) |
-| `timeL`, `timeR` | Time L / R | 1-4000 ms | 250 / 375 / 500 / 125 ms (A-D) |
-| `divL`, `divR` | Division L / R | 1/32 bis 4/1 inkl. triolisch und punktiert | A 1/8, B 1/8., C 1/4, D 1/16 |
+| `timeL`, `timeR` | Time L / R | 1-16000 ms (16 s = 8 Takte bei 120 BPM) | 250 / 375 / 500 / 125 ms (A-D) |
+| `divL`, `divR` | Division L / R | 1/32 bis 8 Takte inkl. triolisch und punktiert; ab einem Takt als Taktzahl (1, 1.5, 2 .. 8; 1.5 = punktiert); über 16 s bleibt die Zeit bei 16 s | A 1/8, B 1/8., C 1/4, D 1/16 |
 | `mode` | Channel Mode | Stereo, Ping Pong, Mid/Side | Stereo |
 | `offset` | Offset (Swing auf R) | -50..+50 % | 0 |
 | `fb` | Feedback | 0-110 % (Soft-Saturation im Pfad) | 40 % |
@@ -207,7 +207,7 @@ Je Einheit (Präfix `a_` bis `d_`, 39 Parameter) und global (9 Parameter). Alle 
 | `wave` | LFO Wave | Sine, Triangle, Saw Up, Saw Down, Square | Sine |
 | `rate` | LFO Rate | 0,01-20 Hz | 1 Hz |
 | `lfoSync` | LFO Sync (folgt während der Wiedergabe der Songposition: Phase 0 auf dem Notenraster ab Songbeginn) | an/aus | aus |
-| `lfoDiv` | LFO Division | 1/32 bis 4/1 | 1/4 |
+| `lfoDiv` | LFO Division | 1/32 bis 24 Takte (1, 1.5, 2, 3 .. 24) | 1/4 |
 | `phase` | LFO Phase R | 0-360 Grad | 0 |
 | `fPhase` | LFO Phase Filter (Filter-Modulation gegen Delay-Modulation verschieben) | 0-360 Grad | 0 |
 | `x4` | Mod x4 | an/aus (Delay-Modulation x4) | aus |
@@ -261,7 +261,7 @@ Je Einheit (Präfix `a_` bis `d_`, 39 Parameter) und global (9 Parameter). Alle 
 
 ## Technik
 
-- `Source/DelayUnit.*`: eine Echo-Einheit. Hermite-interpolierte Delayline (max. 4 s, Lese-Index in double), Feedback mit HP/LP und `tanh`-Sättigung (bei 44,1/48 kHz 2-fach überabgetastet, `Source/Oversampler.h`), Übergangsmodi (Repitch glättet die Zeit, Fade und Jump blenden zwischen zwei Abgriffen), LFO, Hüllkurvenfolger.
+- `Source/DelayUnit.*`: eine Echo-Einheit. Hermite-interpolierte Delayline (max. 16 s, exakte Puffergröße, Lese-Index in double), Feedback mit HP/LP und `tanh`-Sättigung (bei 44,1/48 kHz 2-fach überabgetastet, `Source/Oversampler.h`), Übergangsmodi (Repitch glättet die Zeit, Fade und Jump blenden zwischen zwei Abgriffen), LFO, Hüllkurvenfolger.
 - `Source/Spatializer.*`: 3D-Platzierung (Stereo und Binaural).
 - `Source/GlobalFilter.*`, `Source/NoiseSource.*`: globaler Filter und Noise-Quelle.
 - `Source/QuadEngine.*`: vier Einheiten, Algorithmen, Mute/Solo, Original-Spur (trennt Original und Echos am Ausgang), gewichtete Ausgangssumme, globaler Mix, Ducking, Soft-Limiter, Pegel für die UI. Reines DSP ohne Plugin-Abhängigkeit, daher offline testbar.

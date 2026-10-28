@@ -127,8 +127,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         group->addChild (std::make_unique<BoolP> (id (pSolo), L + "Solo", false));
         group->addChild (std::make_unique<BoolP> (id (pSync), L + "Sync", true));
         group->addChild (std::make_unique<BoolP> (id (pLink), L + "Link", true));
-        group->addChild (std::make_unique<FloatP> (id (pTimeL), L + "Time L", Range (1.0f, 4000.0f, 0.01f, 0.35f), defTime[u], unit ("ms")));
-        group->addChild (std::make_unique<FloatP> (id (pTimeR), L + "Time R", Range (1.0f, 4000.0f, 0.01f, 0.35f), defTime[u], unit ("ms")));
+        group->addChild (std::make_unique<FloatP> (id (pTimeL), L + "Time L", Range (1.0f, kMaxDelaySeconds * 1000.0f, 0.01f, 0.3f), defTime[u], unit ("ms")));
+        group->addChild (std::make_unique<FloatP> (id (pTimeR), L + "Time R", Range (1.0f, kMaxDelaySeconds * 1000.0f, 0.01f, 0.3f), defTime[u], unit ("ms")));
         group->addChild (std::make_unique<ChoiceP> (id (pDivL), L + "Division L", divs, defDiv[u]));
         group->addChild (std::make_unique<ChoiceP> (id (pDivR), L + "Division R", divs, defDiv[u]));
         group->addChild (std::make_unique<ChoiceP> (id (pMode), L + "Channel Mode", juce::StringArray { "Stereo", "Ping Pong", "Mid/Side" }, 0));
