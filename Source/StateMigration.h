@@ -11,7 +11,8 @@ namespace qe
 // 3 = Sync-Modus je Einheit (Notes, Triplet, Dotted, 16th; Standard 16th)
 // 4 = getrennte Resonanz fuer HP und LP (res = LP, hpRes neu), Offset auch fuer L
 // 5 = Sync-Modus je Kanal (syncMode = L, syncModeR neu)
-constexpr int kStateVersion = 5;
+// 6 = Limiter wahlweise nur auf die Echos (limitDry neu, Standard aus); aeltere Zustaende behalten "auf alles"
+constexpr int kStateVersion = 6;
 inline const char* const kStateVersionAttr = "qeVersion";
 
 // Rechnet einen Zustand der Version 1 so um, dass das Verhaeltnis von Original zu Echos ungefaehr
@@ -45,6 +46,14 @@ inline void migrateState (juce::XmlElement& xml)
     };
 
     static const char* const letters[4] = { "a", "b", "c", "d" };
+
+    // 5 -> 6: bisher wirkte der Limiter immer auch auf das Original
+    setValue ("limitDry", 1.0);
+    if (version >= 5)
+    {
+        xml.setAttribute (kStateVersionAttr, kStateVersion);
+        return;
+    }
 
     // 2 -> 3 (unten) setzt den Sync-Modus; 4 -> 5: R bekommt den Modus von L
     auto copySyncModeToR = [&]

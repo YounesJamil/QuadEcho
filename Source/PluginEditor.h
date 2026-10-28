@@ -51,7 +51,7 @@ private:
     RoutingSelector routing;
     PadComponent pad;
     std::unique_ptr<ui::Knob> gMix, gOut, gFb, gDoppler;
-    std::unique_ptr<ui::Toggle> gBinaural, gDist, gEarly, gLimiter;
+    std::unique_ptr<ui::Toggle> gBinaural, gDist, gEarly, gLimiter, gLimitDry;
     std::array<std::array<std::unique_ptr<juce::Slider>, 3>, kPosRows> posSliders;
     std::array<std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 3>, kPosRows> posAttach;
     std::array<std::unique_ptr<UnitPanel>, qe::kNumUnits> panels;

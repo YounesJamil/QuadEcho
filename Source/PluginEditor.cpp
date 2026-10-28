@@ -89,6 +89,7 @@ QuadEchoEditor::QuadEchoEditor (QuadEchoProcessor& p)
     gDist = std::make_unique<ui::Toggle> (apvts, qe::kIdDistDelay, "DIST. DELAY", ui::kAccent);
     gEarly = std::make_unique<ui::Toggle> (apvts, qe::kIdEarly, "EARLY REFL.", ui::kAccent);
     gLimiter = std::make_unique<ui::Toggle> (apvts, qe::kIdLimiter, "LIMITER", ui::kAccent);
+    gLimitDry = std::make_unique<ui::Toggle> (apvts, qe::kIdLimitDry, "ON DRY", ui::kAccent);
     for (auto* k : { gMix.get(), gOut.get(), gFb.get(), gDoppler.get() })
     {
         k->slider.setTooltip (ui::tooltipForGlobal (k == gMix.get() ? qe::kIdGlobalMix : k == gOut.get() ? qe::kIdGlobalOut
@@ -99,7 +100,8 @@ QuadEchoEditor::QuadEchoEditor (QuadEchoProcessor& p)
     gDist->setTooltip (ui::tooltipForGlobal (qe::kIdDistDelay));
     gEarly->setTooltip (ui::tooltipForGlobal (qe::kIdEarly));
     gLimiter->setTooltip (ui::tooltipForGlobal (qe::kIdLimiter));
-    for (auto* t : { gBinaural.get(), gDist.get(), gEarly.get(), gLimiter.get() }) content.addAndMakeVisible (*t);
+    gLimitDry->setTooltip (ui::tooltipForGlobal (qe::kIdLimitDry));
+    for (auto* t : { gBinaural.get(), gDist.get(), gEarly.get(), gLimiter.get(), gLimitDry.get() }) content.addAndMakeVisible (*t);
 
     // Positions-Zahlenfelder (A-D und Noise): Balken von der Mitte aus, Wert per Doppelklick eintippen
     static const char* heads[3] = { "X  LEFT / RIGHT", "Y  BACK / FRONT", "Z  HEIGHT" };
@@ -345,7 +347,8 @@ void QuadEchoEditor::resized()
     gMix->setBounds (m.getX() + 6, m.getY() + 22, 88, 102);
     gOut->setBounds (m.getX() + 94, m.getY() + 22, 88, 102);
     gFb->setBounds (m.getX() + 182, m.getY() + 22, 88, 102);
-    gLimiter->setBounds (m.getX() + 274, m.getY() + 54, 80, 30);
+    gLimiter->setBounds (m.getX() + 274, m.getY() + 40, 80, 30);
+    gLimitDry->setBounds (m.getX() + 274, m.getY() + 76, 80, 30);
 
     pad.setBounds (392, 48, 288, 290);
 

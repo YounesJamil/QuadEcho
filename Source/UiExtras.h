@@ -64,6 +64,7 @@ inline juce::String tooltipForGlobal (const juce::String& id)
     if (id == qe::kIdDistDelay)  return "Adds travel time (distance / 343 m/s) to placed units. Strengthens distance, but shifts echoes slightly off the tempo grid.";
     if (id == qe::kIdEarly)      return "Three very short echoes (5-13 ms) that grow with distance. Not a reverb.";
     if (id == qe::kIdLimiter)    return "Soft limiter at the very end: keeps peaks below 0 dBFS.";
+    if (id == qe::kIdLimitDry)   return "ON DRY off: the limiter leaves the original untouched and squeezes only the echoes into the remaining headroom. On: it acts on the whole output, original included.";
     return {};
 }
 

@@ -132,6 +132,7 @@ struct EngineSettings
     float doppler = 1.0f;         // 0..2, wirkt mit distanceDelay
     float feedbackScale = 1.0f;   // globale Feedback-Bremse 0..1
     bool softLimiter = true;
+    bool limitDry = false;        // Limiter auch auf das Original; aus = Original unangetastet, nur die Echos werden begrenzt
 };
 
 // Operator-Prinzip: sources[i] = Bitmaske der Einheiten, die Einheit i speisen

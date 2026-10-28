@@ -61,6 +61,7 @@ inline const char* const kIdBinaural = "binaural";
 inline const char* const kIdDoppler = "doppler";
 inline const char* const kIdGlobalFb = "gFb";
 inline const char* const kIdLimiter = "limiter";
+inline const char* const kIdLimitDry = "limitDry";
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
@@ -83,6 +84,7 @@ private:
     std::atomic<float>* doppler = nullptr;
     std::atomic<float>* gFb = nullptr;
     std::atomic<float>* limiter = nullptr;
+    std::atomic<float>* limitDry = nullptr;
     std::array<std::atomic<float>*, gCount> glob {};
 };
 } // namespace qe

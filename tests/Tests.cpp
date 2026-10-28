@@ -529,7 +529,7 @@ void testNewFeatures()
         QuadEngine e1, e2; e1.prepare (sr); e2.prepare (sr);
         auto s = singleUnitSettings (0); s.globalOutDb = 12.0f;
         auto loud = sine ((size_t) sr, sr, 300.0, 0.9f);
-        s.softLimiter = true;
+        s.softLimiter = true; s.limitDry = true;   // Limiter auf alles (ohne ON DRY bleibt ein heisses Original unangetastet, siehe K-g)
         const float pOn = peakAbs (runEngine (e1, s, loud, 256).l);
         s.softLimiter = false;
         const float pOff = peakAbs (runEngine (e2, s, loud, 256).l);
@@ -1187,6 +1187,40 @@ void testAuditFixes()
         auto fr = s; fr.echo[0].freeze = true;
         check (std::isinf (tailSeconds (osc, 120.0, sr)) && std::isinf (tailSeconds (one, 120.0, sr)) && std::isinf (tailSeconds (fr, 120.0, sr)),
                "A5: unendlich bei Schleifenverstaerkung >= 1 und Freeze");
+    }
+
+    // K-g: Limiter nur auf die Echos (Schalter "ON DRY" aus): heisses Original bleibt bitgenau, Summe bleibt begrenzt
+    {
+        auto s = singleUnitSettings (0);
+        s.globalMix = 0.0f; s.softLimiter = true;
+        const auto hot = sine ((size_t) sr, sr, 440.0, 0.95f);
+        QuadEngine e1; e1.prepare (sr);
+        const auto o1 = runEngine (e1, s, hot, 512);
+        check (std::memcmp (o1.l.data(), hot.l.data(), hot.l.size() * sizeof (float)) == 0,
+               "K-g: Limiter ohne ON DRY laesst ein heisses Original (0,95) bitgenau durch (Spitze " + std::to_string (peakAbs (o1.l)) + ")");
+        s.limitDry = true;
+        QuadEngine e2; e2.prepare (sr);
+        check (std::abs (peakAbs (runEngine (e2, s, hot, 512).l) - 0.927f) < 0.002f, "K-g: mit ON DRY wirkt der Limiter wie bisher auf das Original");
+        auto w = singleUnitSettings (0);
+        w.echo[0].feedback = 0.9f; w.echo[0].timeL = 50.0f; w.globalMix = 0.5f;
+        QuadEngine e3; e3.prepare (sr);
+        check (peakAbs (runEngine (e3, w, sine ((size_t) (2 * sr), sr, 220.0, 0.9f), 512).l) <= 1.0001f,
+               "K-g: Original plus Echos: Summe bleibt unter 0 dBFS");
+        auto hotOut = w; hotOut.globalOutDb = 12.0f; hotOut.globalMix = 0.3f;
+        const auto hin = sine ((size_t) (2 * sr), sr, 220.0, 0.9f);
+        QuadEngine e4; e4.prepare (sr);
+        const auto o4 = runEngine (e4, hotOut, hin, 512);
+        auto dryOnly = hotOut; dryOnly.echo[0].on = false;
+        QuadEngine e5; e5.prepare (sr);
+        const auto o5 = runEngine (e5, dryOnly, hin, 512);
+        check (peakAbs (o4.l) <= std::max (1.0f, peakAbs (o5.l)) + 1.0e-4f,
+               "K-g: Original selbst ueber 0 dBFS: Summe nie lauter als das Original (" + std::to_string (peakAbs (o4.l)) + " / " + std::to_string (peakAbs (o5.l)) + ")");
+        juce::XmlElement v5 ("STATE");
+        v5.setAttribute (kStateVersionAttr, 5);
+        migrateState (v5);
+        auto* p = v5.getChildByAttribute ("id", "limitDry");
+        check (p != nullptr && p->getDoubleAttribute ("value") > 0.5 && v5.getIntAttribute (kStateVersionAttr) == kStateVersion,
+               "K-g: alte Zustaende (Version 5) behalten den Limiter auf dem Original");
     }
 
     // A2/A3: bei konstanten Parametern ist der Ausgang unabhaengig von der Blockgroesse (auch 1, 441, wechselnd)

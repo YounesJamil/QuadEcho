@@ -36,6 +36,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<FloatP> (juce::ParameterID { kIdDoppler, 1 }, "Doppler", Range (0.0f, 2.0f, 0.01f), 1.0f, unit ("")));
     layout.add (std::make_unique<FloatP> (juce::ParameterID { kIdGlobalFb, 1 }, "Feedback Scale", Range (0.0f, 1.0f, 0.001f), 1.0f, unit ("")));
     layout.add (std::make_unique<BoolP> (juce::ParameterID { kIdLimiter, 1 }, "Soft Limiter", true));
+    layout.add (std::make_unique<BoolP> (juce::ParameterID { kIdLimitDry, 1 }, "Limiter On Dry", false));
 
     // ---- Expert: globaler Filter ----
     {
@@ -189,6 +190,7 @@ ParamReader::ParamReader (juce::AudioProcessorValueTreeState& apvts)
     doppler = apvts.getRawParameterValue (kIdDoppler);
     gFb = apvts.getRawParameterValue (kIdGlobalFb);
     limiter = apvts.getRawParameterValue (kIdLimiter);
+    limitDry = apvts.getRawParameterValue (kIdLimitDry);
     for (int g = 0; g < gCount; ++g) glob[(size_t) g] = apvts.getRawParameterValue (kGlobalIds[g]);
 }
 
@@ -225,6 +227,7 @@ void ParamReader::read (EngineSettings& s) const
     s.doppler = doppler->load();
     s.feedbackScale = gFb->load();
     s.softLimiter = limiter->load() > 0.5f;
+    s.limitDry = limitDry->load() > 0.5f;
 
     auto gf = [this] (int k) { return glob[(size_t) k]->load(); };
     auto gb = [&gf] (int k) { return gf (k) > 0.5f; };

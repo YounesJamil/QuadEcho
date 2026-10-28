@@ -13,6 +13,20 @@ inline float softLimit (float x)
     const float y = knee + range * std::tanh ((a - knee) / range);
     return x < 0.0f ? -y : y;
 }
+
+// Limiter nur auf die Echos: das Original d bleibt unangetastet, die Echos werden in den verbleibenden Platz gedrueckt.
+// Das Knie wandert mit dem Original mit (mindestens |d|): liegt das Original unter dem Knie 0,8, ist es genau
+// softLimit (Summe); darueber bleibt die Summe unter 1,0 bzw. nie ueber dem Original, falls dieses selbst heisser ist.
+inline float softLimitEchoes (float d, float sum)
+{
+    const float a = std::abs (d);
+    if (a <= 0.8f) return softLimit (sum);
+    const float s = std::abs (sum);
+    if (s <= a) return sum;
+    const float range = 1.0f - a;
+    const float y = range > 0.0f ? a + range * std::tanh ((s - a) / range) : a;
+    return sum < 0.0f ? -y : y;
+}
 } // namespace
 
 void QuadEngine::prepare (double sampleRate)
@@ -444,7 +458,11 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
         const float dr = dryR[ui] + (dryFR[ui] - dryR[ui]) * inclA[ui];
         float ol = (dl + busL[ui]) * outGa[ui];
         float orr = (dr + busR[ui]) * outGa[ui];
-        if (s.softLimiter) { ol = softLimit (ol); orr = softLimit (orr); }
+        if (s.softLimiter)
+        {
+            if (s.limitDry) { ol = softLimit (ol); orr = softLimit (orr); }
+            else            { ol = softLimitEchoes (dl * outGa[ui], ol); orr = softLimitEchoes (dr * outGa[ui], orr); }
+        }
         // Letzte Absicherung (z. B. NaN aus einem Parameter): nie NaN/Inf ausgeben, danach alles neu aufsetzen
         if (! std::isfinite (ol) || ! std::isfinite (orr)) { ol = orr = 0.0f; poisoned = true; }
         l[i] = ol;
