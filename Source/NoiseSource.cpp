@@ -87,6 +87,12 @@ void NoiseSource::process (float* outL, float* outR, int n, const NoiseSettings&
 
     const float fs = (float) sr;
     const double lfoHz = s.lfoSync ? (bpm / 60.0) / divBeatsOf (s.lfoDiv) : (double) s.rateHz;
+    if (s.lfoSync && songPpq >= 0.0)   // phase gilt fuer den Anfang des naechsten Teilblocks: dort ausrichten
+    {
+        const int toFrame = (kSub - framePos) % kSub;
+        const double want = (songPpq + (double) toFrame / sr * bpm / 60.0) / divBeatsOf (s.lfoDiv);
+        if (std::abs (want - phase) > 1.0e-6) phase = want;
+    }
     const float qLpTarget = 0.7071f + s.res * s.res * 4.0f, qHpTarget = 0.7071f + s.hpRes * s.hpRes * 4.0f;
     const float qCoef = 1.0f - std::exp (-(float) kSub / (0.03f * (float) sr));   // Resonanz geglaettet, ca. 30 ms
     if (qSm[0] < 0.0f) { qSm[0] = qHpTarget; qSm[1] = qLpTarget; }

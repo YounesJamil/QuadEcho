@@ -41,17 +41,22 @@ void QuadEchoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     reader.read (settings);
 
-    double bpm = 120.0;
+    double bpm = 120.0, ppq = -1.0;   // ppq: Songposition, nur waehrend der Wiedergabe (LFO-Sync auf den Takt)
     if (auto* ph = getPlayHead())
         if (auto pos = ph->getPosition())
+        {
             if (auto b = pos->getBpm())
                 if (*b > 1.0) bpm = *b;
+            if (pos->getIsPlaying())
+                if (auto q = pos->getPpqPosition())
+                    if (*q >= 0.0) ppq = *q;
+        }
 
     lastBpm.store (bpm, std::memory_order_relaxed);
 
     if (numCh >= 2)
     {
-        engine.process (buffer.getWritePointer (0), buffer.getWritePointer (1), n, settings, bpm);
+        engine.process (buffer.getWritePointer (0), buffer.getWritePointer (1), n, settings, bpm, ppq);
     }
     else
     {
@@ -62,7 +67,8 @@ void QuadEchoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
             const int len = std::min (kScratch, n - pos);
             std::copy (mono + pos, mono + pos + len, scratchL.begin());
             std::copy (mono + pos, mono + pos + len, scratchR.begin());
-            engine.process (scratchL.data(), scratchR.data(), len, settings, bpm);
+            engine.process (scratchL.data(), scratchR.data(), len, settings, bpm,
+                            ppq >= 0.0 ? ppq + (double) pos / getSampleRate() * bpm / 60.0 : -1.0);
             for (int i = 0; i < len; ++i)
                 mono[pos + i] = 0.5f * (scratchL[(size_t) i] + scratchR[(size_t) i]);
         }

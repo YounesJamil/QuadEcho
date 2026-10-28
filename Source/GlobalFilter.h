@@ -20,7 +20,8 @@ public:
     void resetInstance (int inst);
     // einmal pro Chunk (n <= 256): schreitet den LFO fuer alle 16-Sample-Bloecke weiter. Die Bloecke liegen an der
     // absoluten Sample-Position; ein angefangener Block aus dem letzten Chunk wird mit seinen Werten zu Ende gefuehrt.
-    void beginChunk (const GlobalFilterSettings& s, double bpm, int n);
+    // ppq: Songposition am Chunk-Anfang (< 0 = unbekannt/steht); mit LFO-Sync folgt die Phase ihr
+    void beginChunk (const GlobalFilterSettings& s, double bpm, int n, double ppq = -1.0);
     bool active() const { return cur.hpOn || cur.lpOn; }
     // verarbeitet den Chunk (n Samples, wie bei beginChunk) in-place
     void process (int inst, float* l, float* r, int n);

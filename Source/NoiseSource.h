@@ -14,6 +14,8 @@ public:
     void prepare (double sampleRate);
     void reset();
     bool isActive() const { return levelSm.isSmoothing() || levelSm.getCurrentValue() > 0.0f; }
+    // Songposition (ppq) am Anfang des naechsten process(); < 0 = unbekannt/steht. Mit LFO-Sync folgt die Phase ihr.
+    void setSongPosition (double ppq) { songPpq = ppq; }
     void process (float* outL, float* outR, int n, const NoiseSettings& s, double bpm,
                   const float* inL, const float* inR);
 
@@ -37,6 +39,7 @@ private:
     float fModS = 0.0f, env = 0.0f, envMapped = 0.0f, envAtk = 0.01f, envRel = 0.001f;
     bool initialised = false;
     int framePos = 0;   // Position im 16er-Teilblock (Steuerraster), ueber Aufrufe hinweg
+    double songPpq = -1.0;
     float frameTrem = 1.0f;
     bool frameHpOn = false, frameLpOn = false, frameHpPeak = false, frameLpPeak = false;
 };

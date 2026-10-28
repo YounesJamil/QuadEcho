@@ -112,7 +112,7 @@ void QuadEngine::computeDuck (int n, const DuckSettings& d, float* gain)
         duckReduction.store (-deepest, std::memory_order_relaxed);
 }
 
-void QuadEngine::process (float* l, float* r, int n, const EngineSettings& s, double bpm)
+void QuadEngine::process (float* l, float* r, int n, const EngineSettings& s, double bpm, double ppq)
 {
     // Nicht-endliche Samples vom Host (NaN, Inf) wuerden Delay-Leitungen und Filter dauerhaft vergiften: als Stille behandeln
     for (int i = 0; i < n; ++i)
@@ -121,10 +121,11 @@ void QuadEngine::process (float* l, float* r, int n, const EngineSettings& s, do
         if (! std::isfinite (r[i])) r[i] = 0.0f;
     }
     for (int pos = 0; pos < n; pos += kChunk)
-        processChunk (l + pos, r + pos, std::min (kChunk, n - pos), s, bpm);
+        processChunk (l + pos, r + pos, std::min (kChunk, n - pos), s, bpm,
+                      ppq >= 0.0 ? ppq + (double) pos / sr * bpm / 60.0 : -1.0);
 }
 
-void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& s, double bpm)
+void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& s, double bpm, double ppq)
 {
     const int requested = std::min (std::max (s.algorithm, 0), kNumAlgorithms - 1);
     bool snapWeights = false;
@@ -174,12 +175,13 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
     so.doppler = s.doppler;
 
     const bool gfOn = s.gfilter.hpOn || s.gfilter.lpOn;
-    gfilter.beginChunk (s.gfilter, bpm, n);
+    gfilter.beginChunk (s.gfilter, bpm, n, ppq);
     const bool needFirst = s.gfilter.skipFirstEcho && gfOn;   // erste-Echo-Leitung nur lesen, wenn sie gebraucht wird
 
     // ---- Noise: roh erzeugen, Anteile "direkt" und "in die Echos" ----
     NoiseSettings ns = s.noise;
     ns.on = s.noise.on && ! anySolo;
+    noise.setSongPosition (ppq);
     noise.process (noiseRaw.l.data(), noiseRaw.r.data(), n, ns, bpm, ext.l.data(), ext.r.data());
     const bool noiseLive = noise.isActive();
     std::array<float, kChunk> dGain, iGain;
@@ -262,6 +264,7 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
             wasActive[uu] = true;
             EchoSettings es = s.echo[uu];
             es.feedback *= s.feedbackScale;
+            units[uu].setSongPosition (ppq);
             units[uu].process (src.l.data(), src.r.data(), tmp.l.data(), tmp.r.data(), n, es, bpm,
                                nullptr, nullptr,
                                needFirst ? firstTmp.l.data() : nullptr, needFirst ? firstTmp.r.data() : nullptr,

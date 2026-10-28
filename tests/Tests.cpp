@@ -1330,6 +1330,42 @@ void testAuditFixes()
         }
     }
 
+    // K-h: LFO-Sync folgt der Songposition (ppq) des Hosts; im normalen Lauf ohne Neuausrichtung (blockgroessen-unabhaengig)
+    {
+        DelayUnit u; u.prepare (sr);
+        EchoSettings c = wetOnly();
+        c.lfoSync = true; c.lfoDiv = 8; c.delayDepth = 0.3f;   // 1/4 = ein Zyklus pro Schlag
+        auto in = makeSig (512);
+        Sig out = in, wet = in;
+        u.setSongPosition (1.25);   // Wiedergabe startet bei Schlag 1,25
+        u.process (in.l.data(), in.r.data(), out.l.data(), out.r.data(), 512, c, 120.0, wet.l.data(), wet.r.data());
+        const double lastFrame = 1.25 + (512.0 - 16.0) / sr * 2.0;   // Position am Anfang des letzten 16er-Teilblocks
+        check (std::abs (u.getLfoPos() - lastFrame) < 1.0e-9, "K-h: LFO-Phase folgt der Songposition (" + std::to_string (u.getLfoPos())
+               + " statt " + std::to_string (lastFrame) + ")");
+
+        auto sc = harness::baselineCases (sr);
+        auto it = std::find_if (sc.begin(), sc.end(), [] (const harness::Case& x) { return x.name == "feat_lfo_sync_x4"; });
+        auto gs = it->s; gs.gfilter.lpOn = true; gs.gfilter.lfoSync = true; gs.gfilter.depth = 0.5f;
+        gs.noise.on = true; gs.noise.lfoSync = true; gs.noise.depthL = 0.5f;
+        const auto in2 = harness::stimulus (2, sr);
+        auto renderPlaying = [&] (int block)
+        {
+            QuadEngine e; e.prepare (sr);
+            Sig o = in2;
+            for (size_t pos = 0; pos < in2.l.size(); pos += (size_t) block)
+            {
+                const int len = (int) std::min<size_t> ((size_t) block, in2.l.size() - pos);
+                const double ppq = 7.0 + (double) pos / sr * it->bpm / 60.0;
+                e.process (o.l.data() + pos, o.r.data() + pos, len, gs, it->bpm, ppq);
+            }
+            return o;
+        };
+        const auto p512 = renderPlaying (512), p441 = renderPlaying (441);
+        check (std::memcmp (p512.l.data(), p441.l.data(), p512.l.size() * sizeof (float)) == 0
+               && std::memcmp (p512.r.data(), p441.r.data(), p512.r.size() * sizeof (float)) == 0,
+               "K-h: bei laufender Wiedergabe bitgenau unabhaengig von der Blockgroesse (kein Nachstellen im Lauf)");
+    }
+
     // A2/A3: bei konstanten Parametern ist der Ausgang unabhaengig von der Blockgroesse (auch 1, 441, wechselnd)
     {
         auto render = [] (const harness::Case& c, const Sig& in, double fs, const std::function<int (size_t)>& next)

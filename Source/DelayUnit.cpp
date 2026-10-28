@@ -149,6 +149,11 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
     const double target[2] = { msL * sr / 1000.0, msR * sr / 1000.0 };
 
     const double lfoHz = s.lfoSync ? (bpm / 60.0) / divBeats (s.lfoDiv) : (double) s.rateHz;
+    if (s.lfoSync && songPpq >= 0.0)   // Phase an der Songposition ausrichten (im normalen Lauf stimmt sie schon)
+    {
+        const double want = songPpq / divBeats (s.lfoDiv);
+        if (std::abs (want - lfoPos) > 1.0e-6) lfoPos = want;
+    }
     const double lfoInc = lfoHz / sr;
     const double phaseOff = s.phaseDeg / 360.0;
     const double fPhaseOff = s.filterPhaseDeg / 360.0;

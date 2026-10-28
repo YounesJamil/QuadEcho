@@ -44,10 +44,16 @@ void GlobalFilter::resetInstance (int inst)
     for (auto& f : i.peakLp) f.reset();
 }
 
-void GlobalFilter::beginChunk (const GlobalFilterSettings& s, double bpm, int n)
+void GlobalFilter::beginChunk (const GlobalFilterSettings& s, double bpm, int n, double ppq)
 {
     cur = s;
     const double hz = s.lfoSync ? (bpm / 60.0) / divBeatsOf (s.lfoDiv) : (double) s.rateHz;
+    if (s.lfoSync && ppq >= 0.0)   // phase gilt fuer den Anfang des naechsten 16er-Blocks: dort ausrichten
+    {
+        const int toFrame = (16 - framePos) % 16;
+        const double want = (ppq + (double) toFrame / sr * bpm / 60.0) / divBeatsOf (s.lfoDiv);
+        if (std::abs (want - phase) > 1.0e-6) phase = want;
+    }
     const float offR = s.phaseDeg / 360.0f;   // rechter Kanal versetzt
     const float qTarget[2] = { 0.7071f + s.hpRes * s.hpRes * 4.0f, 0.7071f + s.res * s.res * 4.0f };
     const float qCoef = 1.0f - std::exp (-16.0f / (0.03f * (float) sr));   // Resonanz geglaettet, ca. 30 ms

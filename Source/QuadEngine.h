@@ -28,8 +28,9 @@ class QuadEngine
 public:
     void prepare (double sampleRate);
     void reset();
-    // Stereo in-place, beliebige Blockgroesse
-    void process (float* l, float* r, int n, const EngineSettings& s, double bpm);
+    // Stereo in-place, beliebige Blockgroesse. ppq = Songposition am Blockanfang in Vierteln (< 0 = unbekannt oder
+    // Wiedergabe steht): LFOs mit Sync richten ihre Phase daran aus.
+    void process (float* l, float* r, int n, const EngineSettings& s, double bpm, double ppq = -1.0);
 
     // Fuer die UI (lockfrei): Spitzenpegel seit dem letzten Abruf (setzt zurueck)
     float takeUnitPeak (int u) { return unitPeaks[(size_t) u].exchange (0.0f); }
@@ -43,7 +44,7 @@ private:
     static constexpr int kClearPerSample = 512;   // verteiltes Loeschen einer ausgeschalteten Einheit: Samples je Leitung pro Audio-Sample
     struct Block { std::array<float, kChunk> l {}, r {}; };
 
-    void processChunk (float* l, float* r, int n, const EngineSettings& s, double bpm);
+    void processChunk (float* l, float* r, int n, const EngineSettings& s, double bpm, double ppq);
     void computeDuck (int n, const DuckSettings& d, float* gain);
 
     double sr = 44100.0;

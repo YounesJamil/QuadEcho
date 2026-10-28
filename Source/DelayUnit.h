@@ -19,6 +19,9 @@ public:
     // (bei 192 kHz 16 MB: in einem Block geloescht dauert das ein Vielfaches der Blockzeit).
     // Vor dem naechsten process() muss finishClear() laufen, falls noch etwas uebrig ist.
     void beginDeferredReset();
+    // Songposition (Viertel, ppq) am Anfang des naechsten process()-Aufrufs; < 0 = unbekannt oder Wiedergabe steht.
+    // Mit LFO-Sync folgt die LFO-Phase dieser Position (Neuausrichtung nur bei Spruengen).
+    void setSongPosition (double ppq) { songPpq = ppq; }
     void clearSome (int samplesPerLine);
     void finishClear() { clearSome (capacity); }
     bool clearPending() const { return clearPos < capacity; }
@@ -59,6 +62,7 @@ private:
     juce::SmoothedValue<float> inGainSm, fbSm, mixSm, outSm, widthSm, fDepthSm, driveSm, kneeSm, freezeSm;
     juce::SmoothedValue<double> depthSm;   // Modulationstiefe in Samples: bestimmt den Lese-Index
     double lfoPos = 0.0;   // LFO-Position in Zyklen, fortlaufend
+    double songPpq = -1.0;
     // Huellkurve und Modulationsglaettung in double: bei 192 kHz sind die Koeffizienten ~1e-5, in float ungenau
     double modSm[2] = { 0.0, 0.0 };
     double fModSm = 0.0;
