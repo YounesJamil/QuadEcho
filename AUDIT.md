@@ -380,7 +380,7 @@ statische Laufzeit), Skript `Q:\QuadEcho\tools\build-tools.sh`, Analyse-Skript `
 
 ---
 
-## 8 Noch nicht gemessen (Anhang-Vermutungen 12–15 aus AUDIT-PROMPT.md)
+## 8 Noch nicht gemessen (Anhang-Vermutungen 12–15 aus dem früheren AUDIT-PROMPT.md, siehe Git-Historie)
 - 12: Intermodulation durch die Original-Spur bei Gain on Dry + Drive.
 - 13: Freeze über Minuten (Pegel, Höhen), Klickfreiheit je Transition, Feedback-Invert.
 - 14: Restwelligkeit des Duckings bei tiefen Tönen.

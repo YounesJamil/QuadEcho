@@ -60,7 +60,7 @@ Was die Ist-Werte bedeuten (Ursachen werden in Phase 1 belegt, hier nur der erst
   Auflösung etwa 1/500 Sample. Das ist eine Zeitverschiebung von wenigen Nanosekunden, also unhörbar, aber sie
   verhindert −110 dBFS. Abhilfe wäre ein double-Index; das ändert die Ausgabe minimal und braucht deshalb Freigabe.
 - **Repitch:** Die Glättung der Delay-Zeit (`l.cur += (target - l.cur) * rpCoef`) bleibt in float vor dem Ziel
-  stehen. Gemessen ist die Delay-Zeit nach einem Sprung dauerhaft falsch (Vermutung 3 aus AUDIT-PROMPT.md bestätigt;
+  stehen. Gemessen ist die Delay-Zeit nach einem Sprung dauerhaft falsch (Vermutung 3 aus dem früheren AUDIT-PROMPT.md (Git-Historie) bestätigt;
   Größe in Samples folgt in Phase 1). Das ist ein echter Fehler, kein Rundungsrauschen.
 - **Hüllkurve bei 192 kHz:** Der Hüllkurvenfolger hat bei 192 kHz einen Koeffizienten von 3,5·10⁻⁵ und rechnet in
   float; er läuft dadurch messbar anders als in double.
