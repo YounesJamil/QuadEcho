@@ -4,14 +4,3 @@ dist/
 *.user
 test-renders/
 ui-shots/
-
-# Lokale Arbeitsunterlagen (Plaene, Notizen, Werkzeug-Einstellungen), nicht im Repo
-CLAUDE.md
-IDEAS.md
-DECISIONS.md
-SPEC.md
-AUDIT.md
-PLAN.md
-PROGRESS.md
-.claude/
-.vscode/

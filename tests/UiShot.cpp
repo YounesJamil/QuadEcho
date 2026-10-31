@@ -1,5 +1,5 @@
 // Rendert den Plugin-Editor ohne Fenster in eine PNG-Datei (fuer UI-Pruefungen).
-// Aufruf: QuadEchoUiShot out.png [id=wert ...] [expert=0/1] [page=0/1] [expertPage=0/1/2] [unit=0..3] [width=1000] [audio=1]
+// Aufruf: QuadEchoUiShot out.png [id=wert ...] [expert=0/1] [compact=0/1] [page=0/1] [expertPage=0/1/2] [unit=0..3] [width=1000] [audio=1]
 // Beispiel: QuadEchoUiShot noise.png nz_on=1 expert=1 expertPage=1
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <cstdlib>
@@ -24,6 +24,7 @@ int main (int argc, char** argv)
         const auto key = arg.upToFirstOccurrenceOf ("=", false, false);
         const auto val = arg.fromFirstOccurrenceOf ("=", false, false);
         if (key == "expert") proc.apvts.state.setProperty ("uiExpert", val.getIntValue() != 0, nullptr);
+        else if (key == "compact") proc.apvts.state.setProperty ("uiCompact", val.getIntValue() != 0, nullptr);
         else if (key == "page") proc.apvts.state.setProperty ("uiPage", val.getIntValue(), nullptr);
         else if (key == "expertPage") proc.apvts.state.setProperty ("uiExpertPage", val.getIntValue(), nullptr);
         else if (key == "unit") proc.apvts.state.setProperty ("uiUnit", val.getIntValue(), nullptr);

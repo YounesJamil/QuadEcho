@@ -74,6 +74,10 @@ struct EchoSettings
     int seed = 1;               // Random-Muster
     bool bellOn = false;        // freies Bell-Band in der Feedback-Schleife (Glocke, Frequenz/Gain/Q frei)
     float bellHz = 1000.0f, bellGain = 0.0f, bellQ = 1.0f;
+    bool chorusLoop = false;    // Chorus in der Schleife (von der Engine aus den globalen Chorus-Einstellungen gesetzt)
+    int chorusMode = 0;
+    float chorusMix = 0.5f;
+    float wow = 0.0f;           // Wow/Flutter 0..1: Bandlauf-Schwankung der Lesestelle (unabhaengig vom LFO)
     bool tape = false;          // TAPE: Schreibweg (Eingang + Feedback) mit Band-Charakter statt tanh, siehe Tape.h
 };
 
@@ -143,11 +147,31 @@ struct DuckSettings
     float releaseMs = 400.0f;
 };
 
+// Stereo (Expert): Breite und Enhance der Echos, mit "Include dry" auch des Originals
+struct StereoSettings
+{
+    float width = 1.0f;             // 0 = mono, 1 = unveraendert, 2 = doppelt so breit (Seite x2)
+    float enhance = 0.0f;           // 0..1: verzoegerte, hochpassgefilterte Mitte als Seite (mono-kompatibel)
+    bool includeDry = false;
+};
+
+// Analoger Chorus (Expert): auf der Summe der Echos oder in der Schleife jeder Einheit
+enum ChorusPlace { ChorusOnEchoes = 0, ChorusInLoop };
+struct ChorusSettings
+{
+    bool on = false;
+    int mode = 0;                   // 0 = I, 1 = II, 2 = I + II
+    float mix = 0.5f;
+    int place = ChorusOnEchoes;
+};
+
 struct EngineSettings
 {
     GlobalFilterSettings gfilter;
     NoiseSettings noise;
     DuckSettings duck;
+    StereoSettings stereo;
+    ChorusSettings chorus;
     std::array<EchoSettings, kNumUnits> echo;
     std::array<PosSettings, kNumUnits> pos;
     int algorithm = 0;
@@ -160,6 +184,7 @@ struct EngineSettings
     float feedbackScale = 1.0f;   // globaler Feedback-Faktor 0..2 (1 = wie in den Einheiten)
     bool softLimiter = true;
     bool limitDry = false;        // Limiter auch auf das Original; aus = Original unangetastet, nur die Echos werden begrenzt
+    bool freezeAll = false;       // FREEZE ALL: alle Einheiten halten (zusaetzlich zu ihren eigenen Freeze-Schaltern)
     int routeMode = RouteAudio;   // Verbindungen zwischen den Einheiten: Audio oder Phasenmodulation (siehe QuadEngine)
     float routeDepth = 0.25f;     // Phasenmodulation: Lese-Verschiebung bei Vollaussteuerung = routeDepth^2 * kMaxRouteMs
 };
@@ -195,6 +220,7 @@ struct Placement
 {
     std::array<float, kNumUnits> weight {};
     float dead = 0.0f;
+    float soloDead = 0.0f;   // nur fuer die Echos: bei Solo zaehlen die uebrigen Ausgaenge mit (Solo so laut wie im Mix)
     std::array<bool, kNumUnits> idle {};   // Ausgang, in dessen Zweig nichts an ist (UI: vorab platzierbar)
 };
 
@@ -214,13 +240,17 @@ inline Placement placementOf (int algorithm, const std::array<bool, kNumUnits>& 
     }
     std::array<float, kNumUnits> pending {};
     Placement p;
+    int mixStarts = 0, soloStarts = 0;
     for (int u = 0; u < kNumUnits; ++u)
     {
         const bool isOutput = (a.outputs & (1 << u)) != 0;
         const bool start = anySolo ? solo[(size_t) u] : (isOutput && branch[(size_t) u]);
         if (start && ! muted[(size_t) u]) pending[(size_t) u] = 1.0f;
         p.idle[(size_t) u] = isOutput && ! branch[(size_t) u];
+        mixStarts += (isOutput && branch[(size_t) u] && ! muted[(size_t) u]) ? 1 : 0;
+        soloStarts += (solo[(size_t) u] && ! muted[(size_t) u]) ? 1 : 0;
     }
+    if (anySolo) p.soloDead = (float) std::max (0, mixStarts - soloStarts);
     for (int u = kNumUnits - 1; u >= 0; --u)
     {
         const float w = pending[(size_t) u];

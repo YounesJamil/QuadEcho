@@ -25,7 +25,7 @@ QuadEchoEditor::QuadEchoEditor (QuadEchoProcessor& p)
     title.setText ("QUAD ECHO", juce::dontSendNotification);
     title.setFont (ui::uiFont (24.0f, true));
     title.setColour (juce::Label::textColourId, ui::kText);
-    subtitle.setText ("4x delay / routing / 3D placement", juce::dontSendNotification);
+    subtitle.setText ("4x delay / routing / 3D", juce::dontSendNotification);
     subtitle.setFont (ui::uiFont (12.0f));
     subtitle.setColour (juce::Label::textColourId, ui::kDim);
     outLabel.setText ("OUT", juce::dontSendNotification);
@@ -50,22 +50,55 @@ QuadEchoEditor::QuadEchoEditor (QuadEchoProcessor& p)
             g.setColour (juce::Colours::black.withAlpha (0.3f));
             g.fillRoundedRectangle (f.expanded (1.0f), radius + 1.0f);
         };
-        shadow (pad.getBounds(), 10.0f);
+        if (! topCollapsed) shadow (pad.getBounds(), 10.0f);
         shadow (panels[(size_t) currentUnit]->getBounds(), 10.0f);
         if (expert->isVisible()) shadow (expert->getBounds(), 10.0f);
         for (auto& c : chips) shadow (c->getBounds(), 8.0f);
-        ui::drawCard (g, masterCard(), "MASTER", ui::kAccent);
-        ui::drawCard (g, roomCard(), "POSITION & ROOM", ui::kAccent);
+        if (! topCollapsed)
+        {
+            ui::drawCard (g, masterCard(), "MASTER", ui::kAccent);
+            ui::drawCard (g, roomCard(), "POSITION & ROOM", ui::kAccent);
+        }
     };
 
     // Presets, Undo/Redo, Master-Meter
-    for (int i = 0; i < qe::numPresets(); ++i) presetBox.addItem (qe::presetName (i), i + 1);
+    refreshPresets();
+    presetBox.beforePopup = [this] { refreshPresets(); };
     presetBox.setTextWhenNothingSelected ("Presets");
-    presetBox.setTooltip ("Starting points: ready-made sounds. Pick one, then change it to taste.");
+    presetBox.setTooltip ("Factory sounds and your own presets (Documents/QUAD ECHO/Presets). \"Save current as...\" stores the current sound.");
     presetBox.onChange = [this]
     {
-        const int idx = presetBox.getSelectedItemIndex();
-        if (idx >= 0) qe::applyPreset (proc.apvts, idx);
+        const int id = presetBox.getSelectedId();
+        if (id >= 1 && id <= qe::numPresets()) { qe::applyPreset (proc.apvts, id - 1); return; }
+        if (id >= kUserPresetId && id < kUserPresetId + userPresetFiles.size())
+        {
+            qe::loadUserPreset (proc.apvts, userPresetFiles[id - kUserPresetId]);
+            return;
+        }
+        presetBox.setSelectedId (0, juce::dontSendNotification);   // Aktionen sind keine Auswahl
+        if (id == kOpenFolderId)
+        {
+            qe::userPresetFolder().createDirectory();
+            qe::userPresetFolder().startAsProcess();
+        }
+        else if (id == kSavePresetId)
+        {
+            qe::userPresetFolder().createDirectory();
+            presetChooser = std::make_unique<juce::FileChooser> ("Save preset", qe::userPresetFolder().getChildFile ("My Preset.qepreset"), "*.qepreset");
+            presetChooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                                            | juce::FileBrowserComponent::warnAboutOverwriting,
+                                        [this] (const juce::FileChooser& fc)
+                                        {
+                                            auto f = fc.getResult();
+                                            if (f == juce::File()) return;
+                                            f = f.withFileExtension ("qepreset");
+                                            if (qe::saveUserPreset (proc.apvts, f))
+                                            {
+                                                refreshPresets();
+                                                presetBox.setText (f.getFileNameWithoutExtension(), juce::dontSendNotification);
+                                            }
+                                        });
+        }
     };
     content.addAndMakeVisible (presetBox);
     undoBtn.setTooltip ("Undo (Ctrl+Z)");
@@ -122,6 +155,14 @@ QuadEchoEditor::QuadEchoEditor (QuadEchoProcessor& p)
     gEarly = std::make_unique<ui::Toggle> (apvts, qe::kIdEarly, "EARLY REFL.", ui::kAccent);
     gLimiter = std::make_unique<ui::Toggle> (apvts, qe::kIdLimiter, "LIMITER", ui::kAccent);
     gLimitDry = std::make_unique<ui::Toggle> (apvts, qe::kIdLimitDry, "ON DRY", ui::kAccent);
+    gFreezeAll = std::make_unique<ui::Toggle> (apvts, qe::kIdFreezeAll, "FREEZE ALL", ui::kNoiseColour);
+    limiterWatch = std::make_unique<juce::ParameterAttachment> (*apvts.getParameter (qe::kIdLimiter), [this] (float v)
+    {
+        gLimitDry->setEnabled (v > 0.5f);   // ON DRY wirkt nur mit Limiter
+        gLimitDry->setAlpha (v > 0.5f ? 1.0f : 0.5f);
+    });
+    limiterWatch->sendInitialUpdate();
+    gFreezeAll->setTooltip ("Freezes all units at once (in addition to their own FREEZE): the echoes hold as endless loops.");
     for (auto* k : { gMix.get(), gOut.get(), gFb.get(), gDoppler.get() })
     {
         k->slider.setTooltip (ui::tooltipForGlobal (k == gMix.get() ? qe::kIdGlobalMix : k == gOut.get() ? qe::kIdGlobalOut
@@ -133,7 +174,7 @@ QuadEchoEditor::QuadEchoEditor (QuadEchoProcessor& p)
     gEarly->setTooltip (ui::tooltipForGlobal (qe::kIdEarly));
     gLimiter->setTooltip (ui::tooltipForGlobal (qe::kIdLimiter));
     gLimitDry->setTooltip (ui::tooltipForGlobal (qe::kIdLimitDry));
-    for (auto* t : { gBinaural.get(), gDist.get(), gEarly.get(), gLimiter.get(), gLimitDry.get() }) content.addAndMakeVisible (*t);
+    for (auto* t : { gBinaural.get(), gDist.get(), gEarly.get(), gLimiter.get(), gLimitDry.get(), gFreezeAll.get() }) content.addAndMakeVisible (*t);
 
     // Positions-Zahlenfelder (A-D und Noise): Balken von der Mitte aus, Wert per Doppelklick eintippen
     static const char* heads[3] = { "X  LEFT / RIGHT", "Y  BACK / FRONT", "Z  HEIGHT" };
@@ -242,6 +283,12 @@ QuadEchoEditor::QuadEchoEditor (QuadEchoProcessor& p)
     currentUnit = juce::jlimit (0, qe::kNumUnits - 1, (int) apvts.state.getProperty ("uiUnit", 0));
     currentPage = juce::jlimit (0, 1, (int) apvts.state.getProperty ("uiPage", 0));
     expertOpen = (bool) apvts.state.getProperty ("uiExpert", false);
+    topCollapsed = (bool) apvts.state.getProperty ("uiCompact", false);
+    compactBtn.setColour (juce::ToggleButton::tickColourId, ui::kAccent);
+    compactBtn.setTooltip ("Compact: folds away routing, master, pad and position (the window gets smaller). Click again to unfold.");
+    compactBtn.setToggleState (topCollapsed, juce::dontSendNotification);
+    compactBtn.onClick = [this] { setCompact (compactBtn.getToggleState()); };
+    content.addAndMakeVisible (compactBtn);
     pageTabs[(size_t) currentPage].setToggleState (true, juce::dontSendNotification);
     selectPage (currentPage);
     selectUnit (currentUnit);
@@ -252,6 +299,7 @@ QuadEchoEditor::QuadEchoEditor (QuadEchoProcessor& p)
     setResizable (true, true);
     updateSizeLimits();
     setSize (w, (int) std::round ((double) w * (double) logicalHeight() / (double) kW));
+    if (topCollapsed) setCompact (true);   // gespeicherter Zustand: Bereiche ausblenden
     startTimerHz (8);
 }
 
@@ -271,7 +319,7 @@ void QuadEchoEditor::updateSizeLimits()
 // Noise-Punkt im Pad und Positionszeile "N": sichtbar, wenn die Noise an ist oder der Expert-Modus offen ist
 void QuadEchoEditor::updateNoiseVisibility()
 {
-    const bool show = expertOpen || noiseOnState;
+    const bool show = (expertOpen || noiseOnState) && ! topCollapsed;
     pad.setShowNoise (show);
     posLabels[(size_t) qe::kNumUnits].setVisible (show);
     for (auto& s : posSliders[(size_t) qe::kNumUnits]) s->setVisible (show);
@@ -302,6 +350,28 @@ void QuadEchoEditor::applyExpertSize()
     if (! expertOpen) return;
     updateSizeLimits();
     setSize (getWidth(), (int) std::round ((double) getWidth() * (double) logicalHeight() / (double) kW));
+}
+
+void QuadEchoEditor::setCompact (bool compact)
+{
+    topCollapsed = compact;
+    proc.apvts.state.setProperty ("uiCompact", compact, nullptr);
+    compactBtn.setToggleState (compact, juce::dontSendNotification);
+    for (juce::Component* c : std::initializer_list<juce::Component*> { &routing, routeMode.get(), &routeDepth, gMix.get(), gOut.get(), gFb.get(),
+                                                                       gLimiter.get(), gLimitDry.get(), gFreezeAll.get(), &pad, gBinaural.get(),
+                                                                       gEarly.get(), gDist.get(), gDoppler.get() })
+        c->setVisible (! compact);
+    for (auto& h : posHeads) h.setVisible (! compact);
+    for (int u = 0; u < qe::kNumUnits; ++u)
+    {
+        posLabels[(size_t) u].setVisible (! compact);
+        for (auto& s : posSliders[(size_t) u]) s->setVisible (! compact);
+    }
+    updateNoiseVisibility();
+    updateSizeLimits();
+    setSize (getWidth(), (int) std::round ((double) getWidth() * (double) logicalHeight() / (double) kW));
+    resized();
+    repaint();
 }
 
 void QuadEchoEditor::setExpert (bool open)
@@ -364,7 +434,8 @@ void QuadEchoEditor::resized()
     proc.apvts.state.setProperty ("uiW", getWidth(), nullptr);
 
     title.setBounds (20, 8, 200, 32);
-    subtitle.setBounds (196, 14, 226, 20);
+    subtitle.setBounds (196, 14, 160, 20);
+    compactBtn.setBounds (340, 10, 82, 28);
     expertBtn.setBounds (428, 10, 104, 28);
     presetBox.setBounds (540, 10, 150, 28);
     undoBtn.setBounds (698, 10, 48, 28);
@@ -381,8 +452,9 @@ void QuadEchoEditor::resized()
     gMix->setBounds (m.getX() + 6, m.getY() + 22, 88, 102);
     gOut->setBounds (m.getX() + 94, m.getY() + 22, 88, 102);
     gFb->setBounds (m.getX() + 182, m.getY() + 22, 88, 102);
-    gLimiter->setBounds (m.getX() + 274, m.getY() + 40, 80, 30);
-    gLimitDry->setBounds (m.getX() + 274, m.getY() + 76, 80, 30);
+    gLimiter->setBounds (m.getX() + 274, m.getY() + 24, 80, 26);
+    gLimitDry->setBounds (m.getX() + 274, m.getY() + 56, 80, 26);
+    gFreezeAll->setBounds (m.getX() + 274, m.getY() + 88, 80, 26);
 
     pad.setBounds (392, 48, 288, 290);
 
@@ -406,14 +478,34 @@ void QuadEchoEditor::resized()
     gDoppler->setBounds (rc.getX() + 210, roomY - 6, 76, 96);
     gDoppler->slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 70, 15);
 
+    const int dy = -topShift();   // eingeklappt: alles darunter rueckt hoch
     for (int u = 0; u < qe::kNumUnits; ++u)
-        chips[(size_t) u]->setBounds (20 + u * 118, 346, 112, 46);
-    pageTabs[0].setBounds (806, 350, 84, 34);
-    pageTabs[1].setBounds (894, 350, 96, 34);
+        chips[(size_t) u]->setBounds (20 + u * 118, 346 + dy, 112, 46);
+    pageTabs[0].setBounds (806, 350 + dy, 84, 34);
+    pageTabs[1].setBounds (894, 350 + dy, 96, 34);
 
     for (auto& panel : panels)
-        panel->setBounds (20, 398, 960, 334);
+        panel->setBounds (20, 398 + dy, 960, 334);
 
-    credit.setBounds (600, 734, 390, 14);
-    expert->setBounds (20, kBaseH + 2, 960, expert->preferredHeight());
+    credit.setBounds (600, 734 + dy, 390, 14);
+    expert->setBounds (20, kBaseH + 2 + dy, 960, expert->preferredHeight());
+}
+
+// Preset-Menue: Werks-Presets, eigene Presets aus dem Dokumente-Ordner, Speichern und Ordner oeffnen
+void QuadEchoEditor::refreshPresets()
+{
+    const auto text = presetBox.getText();
+    presetBox.clear (juce::dontSendNotification);
+    presetBox.addSectionHeading ("Factory");
+    for (int i = 0; i < qe::numPresets(); ++i) presetBox.addItem (qe::presetName (i), i + 1);
+    userPresetFiles = qe::userPresets();
+    if (! userPresetFiles.isEmpty())
+    {
+        presetBox.addSectionHeading ("My presets");
+        for (int i = 0; i < userPresetFiles.size(); ++i) presetBox.addItem (userPresetFiles[i].getFileNameWithoutExtension(), kUserPresetId + i);
+    }
+    presetBox.addSeparator();
+    presetBox.addItem ("Save current as...", kSavePresetId);
+    presetBox.addItem ("Open presets folder", kOpenFolderId);
+    presetBox.setText (text, juce::dontSendNotification);
 }

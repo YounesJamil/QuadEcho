@@ -215,7 +215,7 @@ public:
     static constexpr int kHeight = 264 + kLiveH + 6;       // Noise-Seite (hoechste)
     static constexpr int kGfHeight = 180 + kLiveH + 6;     // Filter-Seite
     static constexpr int kFilterHeight = 180;              // Ducking-Seite
-    static constexpr int kPages = 3;
+    static constexpr int kPages = 4;
     std::function<void()> onHeightChanged;
     int preferredHeight() const { return page == 1 ? kHeight : (page == 0 ? kGfHeight : kFilterHeight); }
 
@@ -254,6 +254,28 @@ public:
         const juce::String phi = juce::String::fromUTF8 ("\xcf\x86");
         const auto mod = ui::kModColour;
 
+        // Seite 3: Stereo und analoger Chorus
+        {
+            const auto sc = ui::kAccent;
+            K (stWidth, "Width", ui::fmtPct, ui::parsePct, sc);
+            K (stEnhance, "Enhance", ui::fmtPct, ui::parsePct, sc);
+            T (stInclDry, "INCLUDE DRY", sc, true);
+            T (chOn, "CHORUS ON", mod);
+            K (chMix, "Mix", ui::fmtPct, ui::parsePct, mod);
+            auto TC = [&] (int g, juce::StringArray labels, juce::StringArray tips)
+            {
+                std::vector<ui::IconChoice::Icon> list;
+                for (const auto& t : labels)
+                    list.push_back ([t] (juce::Graphics& gr, juce::Rectangle<float> r, juce::Colour c)
+                                    { gr.setColour (c); gr.setFont (ui::uiFont (11.0f, true)); gr.drawText (t, r, juce::Justification::centred); });
+                waves[(size_t) g] = std::make_unique<ui::IconChoice> (apvts, kGlobalIds[g], std::move (list), tips, mod);
+                addChildComponent (*waves[(size_t) g]);
+            };
+            TC (chMode, { "I", "II", "I + II" }, { "Mode I: slow and wide", "Mode II: a bit faster, more movement", "Mode I + II: fast, shallow shimmer" });
+            TC (chPlace, { "ON ECHOES", "IN LOOP" }, { "On the sum of the echoes (once, with a touch of bucket-brigade hiss)",
+                                                       "Inside the feedback loop of every unit: each repeat is chorused again" });
+        }
+
         // Seite 0: globaler Filter
         addChildComponent (gfGraph);
         T (gfInclDry, "INCLUDE DRY", tFilter, true);
@@ -264,7 +286,7 @@ public:
         K (gfRate, "Rate", ui::fmtHz, ui::parseNum, mod);
         K (gfDiv, "Rate (sync)", ui::fmtDiv, ui::parseDiv, mod);
         K (gfDepth, "Depth", ui::fmtPct, ui::parsePct, mod);
-        K (gfPhase, phi + " Phase R", ui::fmtDeg, ui::parseNum, mod);
+        K (gfPhase, phi + " Phase", ui::fmtDeg, ui::parseNum, mod);
         K (gfEnv, "Envelope", ui::fmtPct, ui::parsePct, mod);
 
         // Seite 1: Noise
@@ -303,7 +325,7 @@ public:
         addChildComponent (gfLive);
         addChildComponent (nzLive);
 
-        static const char* pageNames[kPages] = { "GLOBAL FILTER", "NOISE", "DUCKING" };
+        static const char* pageNames[kPages] = { "GLOBAL FILTER", "NOISE", "DUCKING", "STEREO" };
         for (int i = 0; i < kPages; ++i)
         {
             auto& b = tabs[(size_t) i];
@@ -317,7 +339,7 @@ public:
         page = juce::jlimit (0, kPages - 1, (int) apvts.state.getProperty ("uiExpertPage", 0));
         tabs[(size_t) page].setToggleState (true, juce::dontSendNotification);
 
-        for (int g : { gfSync, gfLfoOn, nzSync, nzLfoOn, dkOn, nzPanSync })
+        for (int g : { gfSync, gfLfoOn, nzSync, nzLfoOn, dkOn, nzPanSync, chOn, gfHpOn, gfLpOn, gfBellOn, nzOn, stWidth, stEnhance })
         {
             watchers.push_back (std::make_unique<juce::ParameterAttachment> (
                 *apvts.getParameter (kGlobalIds[g]), [this] (float) { updateVisibility(); }));
@@ -364,6 +386,15 @@ public:
             card ("AUTO-PAN", panCard(), ui::kNoiseColour);
             card ("NOISE FILTER", filterCard(), tFilter);
             card ("NOISE MODULATION", modCard(), ui::kModColour);
+        }
+        else if (page == 3)
+        {
+            card ("STEREO", stereoCard(), ui::kAccent);
+            card ("ANALOG CHORUS", chorusCard(), ui::kModColour);
+            g.setColour (ui::kDim);
+            g.setFont (ui::uiFont (11.0f));
+            g.drawText ("Stereo works on the echoes; INCLUDE DRY adds the original. Enhance stays mono-compatible. The chorus sits on the echoes or inside every loop.",
+                        juce::Rectangle<int> (20, kRowY + kCardH + 8, 920, 32), juce::Justification::topLeft);
         }
         else
         {
@@ -434,6 +465,16 @@ public:
         for (int i = 0; i < 4; ++i)
             at (knobs[(size_t) duckOrder[i]].get(), kb (d, 170 + i * 100, 84));
         duckMeter.setBounds (d.getX() + 600, d.getY() + 20, 310, 80);
+
+        // ---- Stereo und Chorus ----
+        const auto st = stereoCard(), ch = chorusCard();
+        at (knobs[stWidth].get(), kb (st, 12, 84));
+        at (knobs[stEnhance].get(), kb (st, 104, 84));
+        at (toggles[stInclDry].get(), juce::Rectangle<int> (st.getX() + 200, st.getY() + 36, 136, 34));
+        at (toggles[chOn].get(), juce::Rectangle<int> (ch.getX() + 12, ch.getY() + 22, 130, 30));
+        at (waves[chMode].get(), juce::Rectangle<int> (ch.getX() + 12, ch.getY() + 60, 130, 30));
+        at (knobs[chMix].get(), kb (ch, 156, 84));
+        at (waves[chPlace].get(), juce::Rectangle<int> (ch.getX() + 252, ch.getY() + 40, 220, 30));
     }
 
 private:
@@ -447,6 +488,8 @@ private:
     juce::Rectangle<int> filterCard() const { return { 12, kRowY + kCardH + 6, 392, kCardH }; }
     juce::Rectangle<int> modCard() const { return { 412, kRowY + kCardH + 6, 536, kCardH }; }
     juce::Rectangle<int> duckCard() const { return { 12, kRowY, 936, kCardH }; }
+    juce::Rectangle<int> stereoCard() const { return { 12, kRowY, 352, kCardH }; }
+    juce::Rectangle<int> chorusCard() const { return { 372, kRowY, 576, kCardH }; }
 
     void updateVisibility()
     {
@@ -455,7 +498,7 @@ private:
         auto show = [] (juce::Component* c, bool v) { if (c != nullptr) c->setVisible (v); };
         auto dim = [] (juce::Component* c, bool on) { if (c != nullptr) { c->setEnabled (on); c->setAlpha (on ? 1.0f : 0.5f); } };
 
-        const bool p0 = page == 0, p1 = page == 1, p2 = page == 2;
+        const bool p0 = page == 0, p1 = page == 1, p2 = page == 2, p3 = page == 3;
         gfGraph.setVisible (p0);
         gfLive.setVisible (p0);
         nzLive.setVisible (p1);
@@ -487,6 +530,33 @@ private:
             dim (knobs[(size_t) g].get(), val (dkOn));
         }
         duckMeter.setVisible (p2);
+
+        for (int g : { stWidth, stEnhance, chMix }) show (knobs[(size_t) g].get(), p3);
+        for (int g : { stInclDry, chOn }) show (toggles[(size_t) g].get(), p3);
+        for (int g : { chMode, chPlace }) show (waves[(size_t) g].get(), p3);
+        for (auto* c : std::initializer_list<juce::Component*> { waves[chMode].get(), waves[chPlace].get(), knobs[chMix].get() })
+            dim (c, val (chOn));
+
+        // Abdunkeln, was gerade nichts bewirkt: Modulation des globalen Filters ohne HP/LP, Schalter ohne Filter,
+        // Noise-Regler bei Noise aus, Include dry bei neutralem Stereo
+        const bool gfF = val (gfHpOn) || val (gfLpOn);
+        if (! gfF)
+            for (auto* c : std::initializer_list<juce::Component*> { waves[gfWave].get(), toggles[gfLfoOn].get(), toggles[gfSync].get(), knobs[gfRate].get(),
+                                                                      knobs[gfDiv].get(), knobs[gfDepth].get(), knobs[gfPhase].get(), knobs[gfEnv].get() })
+                dim (c, false);
+        for (int g : { gfInclDry, gfSkipFirst }) dim (toggles[(size_t) g].get(), gfF || val (gfBellOn));
+        if (! val (nzOn))
+        {
+            for (int g : { nzLevel, nzColor, nzCrackle, nzWidth, nzInto, nzDepthF, nzDepthL, nzPhase, nzEnv, nzRate, nzDiv, nzPanAmt, nzPanRate, nzPanDiv })
+                dim (knobs[(size_t) g].get(), false);
+            for (int g : { nzLfoOn, nzSync, nzPanSync }) dim (toggles[(size_t) g].get(), false);
+            dim (waves[nzWave].get(), false);
+            dim (&nzGraph, false);
+        }
+        else dim (&nzGraph, true);
+        const bool stereoUsed = std::abs (ui::currentValue (proc.apvts, kGlobalIds[stWidth]) - 1.0f) > 0.001f
+                                || ui::currentValue (proc.apvts, kGlobalIds[stEnhance]) > 0.001f;
+        dim (toggles[stInclDry].get(), stereoUsed);
     }
 
     QuadEchoProcessor& proc;

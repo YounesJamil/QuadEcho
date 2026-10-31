@@ -1677,6 +1677,97 @@ void testAuditFixes()
         check (echoAt (PatStairs) != echoAt (PatOff), "Pattern verschiebt die Delay-Zeit");
     }
 
+    // Solo: die Einheit ist so laut wie im Mix (vier parallele Einheiten, B solo), das Original bleibt gleich
+    {
+        auto run = [&] (bool soloB)
+        {
+            EngineSettings s;
+            s.algorithm = 9; s.globalMix = 0.5f; s.softLimiter = false; s.earlyReflections = false;
+            for (int u = 0; u < 4; ++u) { auto& e = s.echo[(size_t) u]; e.on = true; e.feedback = 0.0f; e.timeL = 50.0f + 100.0f * (float) u; e.mix = 1.0f; }
+            s.echo[1].solo = soloB;
+            auto e = std::make_unique<QuadEngine>(); e->prepare (sr);
+            return runEngine (*e, s, impulse ((size_t) (0.5 * sr), 100), 256);
+        };
+        const auto mix = run (false), solo = run (true);
+        const size_t at = 100 + (size_t) (0.15 * sr), w = (size_t) (0.003 * sr);
+        const float eMix = peakAbs (mix.l, at - w, at + w) + peakAbs (mix.r, at - w, at + w);
+        const float eSolo = peakAbs (solo.l, at - w, at + w) + peakAbs (solo.r, at - w, at + w);
+        const float dMix = peakAbs (mix.l, 90, 110), dSolo = peakAbs (solo.l, 90, 110);
+        check (std::abs (toDb (eSolo / eMix)) < 0.5f && std::abs (toDb (dSolo / dMix)) < 0.5f,
+               "Solo: Echo so laut wie im Mix (" + std::to_string (toDb (eSolo / eMix)) + " dB), Original gleich (" + std::to_string (toDb (dSolo / dMix)) + " dB)");
+    }
+
+    // Wow/Flutter: bewegt die Tonhoehe der Echos, reproduzierbar (zwei Laeufe gleich), ohne Wow bitgenau wie vorher
+    {
+        auto run = [&] (float wow)
+        {
+            DelayUnit u; u.prepare (sr);
+            auto s = wetOnly(); s.timeL = s.timeR = 100.0f; s.feedback = 0.5f; s.wow = wow;
+            return runUnit (u, s, sine ((size_t) (2 * sr), sr, 1000.0, 0.3f), 256);
+        };
+        const auto a0 = run (0.0f), a1 = run (1.0f), a2 = run (1.0f);
+        float d = 0.0f; bool same = true;
+        for (size_t i = 0; i < a0.l.size(); ++i) { d = std::max (d, std::abs (a1.l[i] - a0.l[i])); same = same && a1.l[i] == a2.l[i]; }
+        check (d > 0.05f && same, "Wow/Flutter: Echos schwanken, reproduzierbar");
+    }
+
+    // FREEZE ALL, Stereo (Breite, Enhance, Include dry) und analoger Chorus (auf den Echos, in der Schleife)
+    {
+        auto base = [&]
+        {
+            EngineSettings s = singleUnitSettings (0);
+            s.echo[0].timeL = s.echo[0].timeR = 80.0f; s.echo[0].feedback = 0.5f; s.echo[0].link = false; s.echo[0].timeR = 110.0f;
+            s.globalMix = 1.0f; s.softLimiter = false; s.earlyReflections = false;
+            return s;
+        };
+        auto run = [&] (const EngineSettings& s, const Sig& in)
+        {
+            auto e = std::make_unique<QuadEngine>(); e->prepare (sr);
+            return runEngine (*e, s, in, 256);
+        };
+        auto burst = noise ((size_t) (3 * sr), 0.3f, 5);
+        for (size_t i = (size_t) (0.1 * sr); i < burst.l.size(); ++i) burst.l[i] = burst.r[i] = 0.0f;
+
+        // FREEZE ALL: nach 2 s noch so laut wie bei 0,5 s, Tail unendlich
+        auto fz = base(); fz.freezeAll = true;
+        auto eF = std::make_unique<QuadEngine>(); eF->prepare (sr);
+        const auto oF = runEngine (*eF, base(), burst, 256, 120.0, [&] (size_t pos, EngineSettings& st) { st.freezeAll = pos >= (size_t) (0.15 * sr); });
+        const float early = rms (oF.l, (size_t) (0.5 * sr), (size_t) (0.8 * sr)), late = rms (oF.l, (size_t) (2.5 * sr), (size_t) (2.8 * sr));
+        check (early > 1e-3f && std::abs (toDb (late) - toDb (early)) < 1.5f && std::isinf (tailSeconds (fz, 120.0, sr)), "FREEZE ALL haelt die Echos");
+
+        // Breite 0: Echos mono; Enhance verschwindet in L + R; ohne Include dry bleibt das Original unberuehrt
+        auto mono = base(); mono.stereo.width = 0.0f;
+        const auto oM = run (mono, burst);
+        float lr = 0.0f;
+        for (size_t i = (size_t) (0.3 * sr); i < oM.l.size(); ++i) lr = std::max (lr, std::abs (oM.l[i] - oM.r[i]));
+        const auto plain = run (base(), burst);
+        auto enh = base(); enh.stereo.enhance = 1.0f;
+        const auto oE = run (enh, burst);
+        float sumDiff = 0.0f, sideDiff = 0.0f;
+        for (size_t i = (size_t) (0.3 * sr); i < oE.l.size(); ++i)
+        {
+            sumDiff = std::max (sumDiff, std::abs ((oE.l[i] + oE.r[i]) - (plain.l[i] + plain.r[i])));
+            sideDiff = std::max (sideDiff, std::abs ((oE.l[i] - oE.r[i]) - (plain.l[i] - plain.r[i])));
+        }
+        check (lr < 1e-4f && sumDiff < 1e-4f && sideDiff > 0.01f, "Stereo: Breite 0 = mono, Enhance mono-kompatibel und wirksam");
+        auto dryOnly = base(); dryOnly.globalMix = 0.0f; dryOnly.stereo.width = 0.0f;
+        auto dryIncl = dryOnly; dryIncl.stereo.includeDry = true;
+        const auto st = sine ((size_t) sr, sr, 300.0, 0.3f);
+        auto stereoIn = st; for (auto& v : stereoIn.r) v *= 0.2f;
+        const auto oD = run (dryOnly, stereoIn), oI = run (dryIncl, stereoIn);
+        check (std::abs (oD.l[(size_t) (0.5 * sr)] - stereoIn.l[(size_t) (0.5 * sr)]) < 1e-4f
+               && std::abs (oI.l[(size_t) (0.5 * sr)] - oI.r[(size_t) (0.5 * sr)]) < 1e-4f, "Stereo: ohne Include dry Original unberuehrt, mit Include dry mono");
+
+        // Chorus auf den Echos: veraendert sie, aus = bitgenau; in der Schleife mit Feedback 100 % begrenzt
+        auto chE = base(); chE.chorus.on = true; chE.chorus.mode = 1;
+        const auto oC = run (chE, burst);
+        float dC = 0.0f;
+        for (size_t i = 0; i < oC.l.size(); ++i) dC = std::max (dC, std::abs (oC.l[i] - plain.l[i]));
+        auto chL = base(); chL.chorus.on = true; chL.chorus.place = ChorusInLoop; chL.echo[0].feedback = 1.0f; chL.echo[0].inGainDb = 12.0f;
+        const auto oL = run (chL, sine ((size_t) (3 * sr), sr, 440.0, 0.8f));
+        check (dC > 0.01f && finite (oL, 3.0f) && peakAbs (oL.l, (size_t) (2 * sr)) < 2.1f, "Chorus: wirkt auf die Echos, in der Schleife begrenzt");
+    }
+
     // A2/A3: bei konstanten Parametern ist der Ausgang unabhaengig von der Blockgroesse (auch 1, 441, wechselnd)
     {
         auto render = [] (const harness::Case& c, const Sig& in, double fs, const std::function<int (size_t)>& next)

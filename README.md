@@ -26,7 +26,7 @@ cmake --build build --config Release --parallel --target QuadEchoTests
 build\QuadEchoTests_artefacts\Release\QuadEchoTests.exe test-renders
 ```
 
-605 Prüfungen (inkl. Regressionstests zum DSP-Audit): Delay-Zeiten bei 44,1-192 kHz, Feedback, Modulation, Klickfreiheit, Algorithmen, 3D-Platzierung, Binaural, Doppler, Mute/Solo/Output-aus, Place Dry, analoger Drive, Drive in der Schleife, globaler Filter, Noise, Limiter, Feedback-Bremse, Dry/Wet-Konzept (100 % Wet ohne Original, auch in Ketten), Freeze, Ducking, Umrechnung alter Zustände, Platzierung bei ausgeschalteter Ausgangseinheit, Sync-Modi (Notes/Triplet/Dotted/16th), Offset und Sync-Modus je Kanal, Filtersteilheit 18 dB/Oktave, Filter-Boost, Random-LFO, Stereo-Phase des globalen Filters, Fuzz auf NaN/Inf, CPU-Last. Zusätzlich 60 WAV-Renders nach `test-renders/` (nicht im Git).
+671 Prüfungen (inkl. Regressionstests zum DSP-Audit): Delay-Zeiten bei 44,1-192 kHz, Feedback, Modulation, Klickfreiheit, Algorithmen, 3D-Platzierung, Binaural, Doppler, Mute/Solo/Output-aus, Place Dry, analoger Drive, Drive in der Schleife, globaler Filter, Noise, Limiter, Feedback-Bremse, Dry/Wet-Konzept (100 % Wet ohne Original, auch in Ketten), Freeze, Ducking, Umrechnung alter Zustände, Platzierung bei ausgeschalteter Ausgangseinheit, Sync-Modi (Notes/Triplet/Dotted/16th), Offset und Sync-Modus je Kanal, Filtersteilheit 18 dB/Oktave, Filter-Boost, Random-LFO, Stereo-Phase des globalen Filters, Tape, Wow/Flutter, Routing-Modus Phase, Bell-Band, Schritt-Muster, Stereo-Bühne, Solo-Pegel, Freeze All, Stereo/Enhance, Chorus, Fuzz auf NaN/Inf, CPU-Last. Zusätzlich 60 WAV-Renders nach `test-renders/` (nicht im Git).
 
 UI-Pruefung ohne Fenster: `QuadEchoUiShot` rendert den Editor in ein PNG, z. B. `QuadEchoUiShot.exe noise.png expert=1 expertPage=1 nz_on=1 audio=1` (Parameter als `id=wert`, siehe Parameterliste).
 
@@ -63,11 +63,13 @@ Zehn Algorithmen als Blockdiagramm, Klick wählt aus. Wie bei Operator geht nur 
 
 Eine ausgeschaltete Einheit (`UNIT ON` aus) reicht ihr Eingangssignal unverändert durch. Zweige ohne aktive Einheit zählen nicht zur Ausgangssumme, damit das Dry-Signal nicht mehrfach addiert wird.
 
+**Routing-Modus** (Leiste unter den Kacheln): `AUDIO` (Standard) speist eine Einheit mit dem Klang ihrer Quellen, sie echot also auch deren Echos. Bei `PHASE` bekommt jede gespeiste Einheit stattdessen den Eingang, und die **Echos ihrer Quellen verschieben nur ihre Delay-Zeit** (Phasenmodulation, FM-artig; bei "Serial" eine Modulationskette, hörbar ist D). `PHASE + DRY` moduliert mit dem ganzen Ausgang der Quelle inklusive Original: jeder Ton verbiegt sich selbst. `Depth` daneben: Verschiebung bei Vollaussteuerung, quadratischer Regler bis 10 ms (Standard 0,63 ms). Der Wechsel blendet wie beim Algorithmus kurz aus und ein.
+
 ### Zeit (Karte TIME)
 
 Wie bei Ableton Echo: Mit `SYNC` folgen die Zeiten dem Tempo. Die kleinen Symbole über jedem Zeitregler wählen den **Sync-Modus dieser Seite**: `Notes` (gerade Notenwerte), `Triplet`, `Dotted` oder `16th` (Zeit als Anzahl Sechzehntel, 1-16, angezeigt als ganze Zahl; **Standard**). Der Zeitregler geht durch die Werte des Modus. Im Mid/Side-Modus heißen die Seiten M und S statt L und R. Beim Wechsel zwischen Notes, Triplet und Dotted bleibt die Grundnote (1/8 -> 1/8T -> 1/8.). Ohne `SYNC` gelten Millisekunden.
 
-Am Anfang ist jede Einheit ein **Single-Delay**: `LINK` ist aus, der rechte Regler ist ausgegraut und folgt dem linken. **`LINK` an** (leuchtet) gibt die rechte Zeit und ihren Sync-Modus frei.
+Am Anfang ist jede Einheit ein **Single-Delay**: `LINK` leuchtet, der rechte Regler ist ausgegraut und folgt dem linken. **`LINK` aus** gibt die rechte Zeit und ihren Sync-Modus frei.
 
 Unter jedem Zeitregler steht der **Offset** dieser Seite als kleines Feld (z. B. `+0%`, wie bei Ableton Echo): verschiebt die Zeit um -50 bis +50 % (Swing), auch im Single-Delay. Bei 0 gedimmt, sonst in der Farbe der Einheit. Ziehen, Klick zum Eintippen, Doppelklick = 0.
 
@@ -75,9 +77,19 @@ Unter jedem Zeitregler steht der **Offset** dieser Seite als kleines Feld (z. B.
 
 Feedback-Filter, globaler Filter und Noise-Filter sind Kurven mit zwei Punkten (HP und LP), Steilheit **18 dB pro Oktave**. **Ziehen:** links/rechts = Frequenz, nach oben = **Boost** an der Grenzfrequenz (Glocke, bis +18 dB, wandert mit der Modulation mit; ganz unten sitzt der Punkt auf der Filterkurve). **Mit Alt** hoch/runter = Güte Q (Resonanz und Breite der Glocke). Shift = fein, **Doppelklick** = Standard. An und aus über die Kästchen **HP** / **LP** oben rechts (aus = hohler Punkt). HP und LP haben je eine eigene Resonanz. Die Werte stehen klein über der Kurve.
 
+**Bell-Band:** Doppelklick auf eine freie Stelle der Kurve setzt ein freies Glockenband dorthin (Raute; Frequenz und Gain von der Mausposition). Ziehen = Frequenz und Gain (-18 bis +18 dB), Alt = Breite (Q 0,3-10), Doppelklick auf die Raute entfernt es. In der Feedback-Schleife wirkt es pro Wiederholung wie HP und LP (`STABLE` gleicht auch seine Anhebung aus). Es folgt nicht der Filter-Modulation.
+
 ### Symbole statt Auswahl-Menüs
 
 LFO-Formen (Sinus, Dreieck, Säge auf/ab, Rechteck, **Random**: weich gleitende Zufallswerte), Sync-Modus, Channel Mode (Stereo: zwei Spuren, Ping Pong: Ball zwischen zwei Seiten, M/S) und Transition werden als Symbole gewählt. Notenwerte (Delay-Zeit, LFO-Sync) sind Drehregler.
+
+### Modulation (Seite MODULATION)
+
+Jede Einheit hat einen LFO (Form, Rate oder Notenwert mit `LFO SYNC`, `φ Phase R` für die rechte Seite, `φ Filter` für die Filterbewegung) und einen Hüllkurvenfolger. **Envelope mix** mischt die Quelle: 0 = LFO, 100 % = Lautstärke am Eingang der Einheit. **Delay depth** (bis 10 ms) und **Filter depth** (bis +/-2 Oktaven) bestimmen die Wirkung. **LFO ×** und **ENV ×** (0,1-10, Standard 1) vervielfachen den LFO- bzw. Hüllkurven-Anteil, auf Delay und Filter; mit beiden auf 10 reicht die Delay-Modulation bis 100 ms.
+
+**PATTERN** ersetzt die LFO-Welle durch ein Schritt-Muster (`STAIRS`, `ZIGZAG`, `SYNCOPATED`, `RANDOM`; `OFF` = normale Welle). Ein LFO-Zyklus ist ein Muster mit 8 oder 16 Stufen; mit `LFO SYNC` auf 1 Takt also 16tel. `Glide` lässt die Delay-Zeit von Stufe zu Stufe gleiten (0 = springt), `Seed` und `NEW SEED` wählen das Random-Muster.
+
+Die **Live-Modulation** darunter zeigt die letzten 4 Sekunden: LFO, Hüllkurve und die Wirkung auf Delay-Zeit und Filter.
 
 ### Original und Echos (Dry/Wet)
 
@@ -94,6 +106,8 @@ Alte Projekte (vor dieser Änderung gespeichert) werden beim Laden automatisch u
 Vier Chips A-D: Klick wählt die Einheit zum Bearbeiten, Klick auf den Buchstaben schaltet sie an (gefüllter Punkt) oder aus (Ring). Ein eisblauer Ring zeigt `FREEZE`. `M` = Mute (Einheit überall stumm), `S` = Solo (nur diese Einheit, an ihrer Position hören), darunter der Pegel der Echos dieser Einheit. Rechts daneben die Seiten `ECHO` und `MODULATION`. Die Auswahl bleibt beim Schließen und Öffnen des Fensters erhalten, ebenso die Fenstergröße.
 
 **Freeze** (Karte Feedback): hält die Echos der Einheit als endlose Schleife. Der Eingang wird geschlossen, das Feedback steht auf genau 100 %, Filter und Sättigung werden umgangen und die Delay-Zeit rastet auf ganze Samples ein, damit die Schleife nicht mit jeder Runde dunkler wird. Zeitänderungen warten, bis Freeze wieder aus ist. Ein- und Ausschalten sind weich (50 ms).
+
+**TAPE** (Karte Feedback, oben rechts): Alles, was auf das „Band“ der Einheit geschrieben wird (Eingang plus Feedback), läuft durch eine Bandstufe: Pre-Emphasis, weiche Sättigung, De-Emphasis, Head Bump bei 100 Hz und Höhenverlust ab 10 kHz, auf höchstens 0 dB normiert. Das erste Echo geht einmal hindurch, jede Wiederholung erneut: laute Höhen sättigen früher, die Repeats werden wärmer und dunkler. Input Gain über 0 dB fährt das Band härter an. **Wow** (Wert-Pille links neben TAPE, immer aktiv, auch ohne TAPE): Bandlauf-Schwankung aus langsamem Wow (ca. 0,9 Hz) und schnellem Flutter (ca. 9 Hz), weich zufällig und reproduzierbar; bei 100 % etwa +-0,5 % Tonhöhe. In der Schleife leiert jede Wiederholung stärker, im Freeze aus.
 
 **Mute (`M`)** stellt eine Einheit komplett stumm, egal wie sie geroutet ist (sie liefert auch nichts an nachfolgende Einheiten). `UNIT ON` aus ist dagegen ein Bypass: das Signal läuft unverändert durch. Der Output-Regler geht von -24 bis +12 dB und schaltet nichts ab.
 
@@ -113,7 +127,7 @@ Im Raum platziert werden die **Echos**. Das Original bleibt in der Mitte. Mit `P
 
 - **Entfernung (Stereo-Bühne):** Die vordere Hälfte bleibt präsent (Mitte ca. -1,8 dB), nach hinten bis 2,8 m (-9 dB), dazu weniger Höhen, schmaler und mehr frühe Reflexionen; X ändert den Pegel nicht.
 - **Entfernung (Binaural):** Bis zum 2. Ring bleibt eine Quelle nah und präsent (1 bis 1,4 m, höchstens -3 dB, kaum Luftdämpfung). Danach greift die Entfernung steil: äußerer Ring 4 m (-12 dB), Ecken ca. 5,6 m (-15 dB). Dazu Luftabsorption (Tiefpass), schmalere Stereobreite, optional frühe Reflexionen und Laufzeit.
-- **Stereo-Modus:** Equal-Power-Pan nach X, Laufzeitdifferenz bis 0,6 ms, Höhenverlust am abgewandten Ohr. **Hinten** klingt dezent dumpfer und leiser. Stereo kann hinten nicht wirklich abbilden: ohne Binaural klingt "hinten" eher wie "vorne, weiter weg und dunkler".
+- **Stereo-Modus:** Equal-Power-Pan nach X, Laufzeitdifferenz bis 0,6 ms, Höhenverlust am abgewandten Ohr. Ein „hinter mir“ gibt es im Stereofeld nicht, Y ist dort die Bühnentiefe.
 - **Binaural (Kopfhörer):** Kugel-Kopf-Modell. Laufzeitdifferenz nach Woodworth (bis 0,66 ms), Kopfschatten nach Brown/Duda, Ohrmuschel-Dämpfung hinten, Höhenfärbung. Nur mit Kopfhörern sinnvoll, auf Lautsprechern klingt es seltsam.
 - Alle Positionen werden mit 50 ms geglättet, es gibt kein Zippern.
 
@@ -125,8 +139,9 @@ Im Raum platziert werden die **Echos**. Das Original bleibt in der Mitte. Mit `P
 |--------|---------|
 | Global Dry/Wet | der einzige Regler für das Original: 0 % nur Original, 100 % nur Echos |
 | Global Output | Master-Pegel hinter dem Routing |
-| Feedback Scale | skaliert die Feedbacks aller vier Einheiten gemeinsam (100 % = wie eingestellt; runterziehen, um die Echos live ausklingen zu lassen) |
+| Feedback Scale | skaliert die Feedbacks aller vier Einheiten gemeinsam, 0-200 % (100 % = wie eingestellt; runterziehen lässt die Echos ausklingen, über 100 % wachsen sie bis in die Sättigung) |
 | LIMITER | weicher Limiter am Ende, hält Spitzen unter 0 dBFS |
+| FREEZE ALL | friert alle Einheiten auf einmal ein (zusätzlich zu ihren eigenen `FREEZE`-Schaltern); die Chips zeigen den eisblauen Ring |
 | ON DRY | Limiter auch auf das Original. Aus (Standard): das Original bleibt unangetastet, nur die Echos werden in den verbleibenden Platz unter 0 dBFS gedrückt. Ältere Projekte laden mit ON DRY an und klingen wie vorher. Unabhängig davon begrenzt eine Notbremse den Ausgang immer auf höchstens +6 dBFS (darunter bis +4 dBFS unverändert). |
 
 **POSITION & ROOM** (rechts neben dem Pad):
@@ -138,19 +153,24 @@ Im Raum platziert werden die **Echos**. Das Original bleibt in der Mitte. Mit `P
 | DIST. DELAY | Laufzeit Abstand/343 m/s (aus: Sync-Delays bleiben exakt am Raster) |
 | Doppler | Tonhöhenänderung beim Verschieben von Punkten (0 = keine, 100 % = realistisch, 200 % = übertrieben); wirkt nur mit `DIST. DELAY` und ist ohne abgedunkelt |
 
+**COMPACT** (Kopfzeile) klappt Routing, Master, Pad und Position & Room weg, das Fenster wird rund 300 px niedriger; Einheiten und Expert-Bereich rücken hoch. Regler, die gerade nichts bewirken (z. B. Filter-Tiefe ohne Filter, Noise-Regler bei Noise aus, ON DRY ohne Limiter), sind abgedunkelt, bleiben aber einstellbar.
+
 Oben rechts: Preset-Menü, Undo/Redo (auch Strg+Z, Strg+Y, Strg+Umschalt+Z) und das Master-Meter. Tooltips erklären jeden Regler. Die Oberfläche nutzt eine eingebaute Schrift (*Barlow Semi Condensed*, SIL Open Font License, `Resources/Fonts/`), damit sie auf Windows und Mac gleich aussieht; Texte in warmem Sand, Werte etwas heller. Alle Regler und Zahlenbalken bedienen sich gleich: **ziehen** ändert den Wert (**Shift** = zehnmal feiner, auch mitten im Ziehen), **einmal klicken** öffnet das Eingabefeld (Enter übernimmt, Esc bricht ab), **Doppelklick** setzt auf den Standardwert zurück.
 
 ### Presets
 
-Einsteiger-Klänge zum Ändern: Init, Slap, Ping Pong, Dotted Eighth, Tape Chain, Wide Space, Binaural Orbit. Sie erscheinen im Preset-Menü des Plugins (nicht in der Programmliste des Hosts).
+Werks-Presets: Init, Slap, Ping Pong, Dotted Eighth, Tape Chain, Wide Space, Binaural Orbit und die wilderen Tape Wobble (Band mit Wow), Phase Chain (Routing PHASE in Serie), Glitch Steps (Zufallsmuster im Takt), Chorus Space (Chorus in der Schleife, breites Stereo), Dub Siren (Feedback über 100 %, Resonanz, Bell-Band, Band), Filtered Dub (Ping Pong, Filter öffnet sich über 2 Takte) Distant Atmosphere (lange Echos hinten auf der Bühne, Chorus, breit) und Total Chaos (Serie mit PHASE + DRY, Zufallsmuster überall, Band, Chorus in der Schleife, Feedback über 100 %: laut, der Limiter bleibt an). Sie erscheinen im Preset-Menü des Plugins (nicht in der Programmliste des Hosts).
+
+**Eigene Presets:** Im Preset-Menü speichert `Save current as...` den aktuellen Klang als Datei (`*.qepreset`) in `Dokumente/QUAD ECHO/Presets`; `Open presets folder` öffnet den Ordner. Eigene Presets stehen im Menü unter "My presets". Gespeichert werden alle Parameter mit der Zustandsversion; ältere Presets werden beim Laden umgerechnet, fehlende Parameter (neuere Funktionen) stehen auf neutral.
 
 ### Expert-Bereich (Knopf mit Zahnrad oben in der Kopfzeile)
 
-Klappt unten aus, das Fenster wird höher. Gleicher Stil wie der Rest, Blau als Kennfarbe (wie der Knopf), kompakt gehalten. Drei Seiten:
+Klappt unten aus, das Fenster wird höher. Gleicher Stil wie der Rest, Blau als Kennfarbe (wie der Knopf), kompakt gehalten. Vier Seiten:
 
-- **GLOBAL FILTER:** HP und LP (je An/Aus, Frequenz, Resonanz) hinter allen Einheiten. Er filtert die Summe aller Echos einmal, **jedes Echo, auch das erste**. Der Feedback-Filter pro Einheit erreicht das erste Echo nicht, der globale schon. Das Original bleibt unberührt, außer `INCLUDE DRY` ist an (dann ist er ein Master-Filter). Mit `SKIP 1ST ECHO` bleibt das **erste Echo jeder Einheit ungefiltert** und nur die Wiederholungen (2., 3., ...) werden gefiltert. Eigene Modulation: LFO an/aus, Form, Rate/Sync, Tiefe und `φ Phase R` (der rechte Filter bewegt sich versetzt zum linken: Stereo-Bewegung; 0° = beide gleich).
-- **NOISE:** Rauschquelle (Bandrauschen und Knistern) mit `Level` (100 % = intensiv), `Color` (braun - rosa - weiß), `Crackle`, `Width` und `Into echoes`. `Into echoes` überblendet wie ein Dry/Wet-Regler zwischen "direkt zum Ausgang" (0) und "in die Delays hinein" (100 %): dann wird die Noise mitgeechot und in der Feedback-Schleife gesättigt. Eigener Filter (HP/LP mit Resonanz) und eigene Modulation (LFO an/aus, Form, Rate/Sync, Filter-Tiefe, Pegel-Tiefe, `φ`, Hüllkurve des Eingangs). Die Noise hat einen **eigenen Punkt im 3D-Pad** (Symbol), ziehbar, solange sie an ist. Pad-Punkt und Positionszeile `N` sind sichtbar, wenn die Noise an ist oder der Expert-Modus aufgeklappt ist. Sie läuft unabhängig vom Routing und wird bei Solo stummgeschaltet.
-- **DUCKING:** Die Echos werden leiser, solange am Eingang gespielt wird, und kommen in den Pausen zurück (typisch für Gesang und Soli). `Threshold` (ab welchem Eingangspegel, weiches Knie +/-3 dB), `Amount` (wie weit, bis -40 dB), `Attack` (wie schnell sie abtauchen) und `Release` (wie schnell sie zurückkommen). Die Anzeige `ECHO REDUCTION` zeigt live, wie weit gerade abgesenkt wird. Original und Noise bleiben unberührt.
+- **GLOBAL FILTER:** HP und LP (je An/Aus, Frequenz, Resonanz) hinter allen Einheiten. Er filtert die Summe aller Echos einmal, **jedes Echo, auch das erste**. Der Feedback-Filter pro Einheit erreicht das erste Echo nicht, der globale schon. Das Original bleibt unberührt, außer `INCLUDE DRY` ist an (dann ist er ein Master-Filter). Mit `SKIP 1ST ECHO` bleibt das **erste Echo jeder Einheit ungefiltert** und nur die Wiederholungen (2., 3., ...) werden gefiltert. Eigene Modulation: LFO an/aus, Form, Rate/Sync, Tiefe, `φ Phase` (der rechte Filter bewegt sich versetzt zum linken: Stereo-Bewegung; 0° = beide gleich) und `Envelope` (0 = LFO, 100 % = Lautstärke des Eingangs bewegt den Filter). Bell-Band wie bei den Einheiten. Darunter die Live-Modulation (LFO, Hüllkurve, Filter).
+- **NOISE:** Rauschquelle (Bandrauschen und Knistern) mit `Level` (100 % = intensiv), `Color` (braun - rosa - weiß), `Crackle`, `Width` und `Into echoes`. `Into echoes` überblendet wie ein Dry/Wet-Regler zwischen "direkt zum Ausgang" (0) und "in die Delays hinein" (100 %): dann wird die Noise mitgeechot und in der Feedback-Schleife gesättigt. Eigener Filter (HP/LP mit Resonanz) und eigene Modulation (LFO an/aus, Form, Rate/Sync, Filter-Tiefe, Pegel-Tiefe, `φ`, Hüllkurve des Eingangs). Die Noise hat einen **eigenen Punkt im 3D-Pad** (Symbol), ziehbar, solange sie an ist. Pad-Punkt und Positionszeile `N` sind sichtbar, wenn die Noise an ist oder der Expert-Modus aufgeklappt ist. Sie läuft unabhängig vom Routing und wird bei Solo stummgeschaltet. **AUTO-PAN** (eigene Karte): eigener Sinus-LFO für das Panorama der Noise mit `Amount` (0 = aus, 100 % = ganz links bis ganz rechts), `Frequency` oder Notenwert mit `SYNC`. Darunter die Live-Modulation (LFO, Hüllkurve, Filter, Pegel, Auto-Pan).
+- **DUCKING:** Die Echos werden leiser, solange am Eingang gespielt wird, und kommen in den Pausen zurück (typisch für Gesang und Soli). `Threshold` (ab welchem Eingangspegel, weiches Knie +/-3 dB), `Amount` (wie weit, bis -40 dB), `Attack` (wie schnell sie abtauchen) und `Release` (wie schnell sie zurückkommen). Rechts zeigt `INPUT` den Eingangspegel mit dem Threshold als weiße Marke (auch bei ausgeschaltetem Ducking, zum Einstellen), darunter `ECHO REDUCTION`, wie weit gerade abgesenkt wird. Original und Noise bleiben unberührt.
+- **STEREO:** `Width` (0 = mono, 100 % = unverändert, 200 % = doppelt so breit) und `Enhance` (eine verzögerte, hochpassgefilterte Kopie der Mitte geht auf die Seiten: mehr Raum, verschwindet in Mono, bleibt also mono-kompatibel). Standardmäßig nur auf den Echos; `INCLUDE DRY` nimmt das Original mit. **ANALOG CHORUS** im Stil der klassischen Eimerketten-Chöre: Dreieck-LFO, rechts gegenläufig, dunkel und leicht gesättigt. Modus `I` (langsam, breit), `II` (schneller), `I + II` (schnelles, flaches Flirren), `Mix` (50 % = klassisch). `ON ECHOES`: einmal auf der Summe der Echos (mit einem Hauch Rauschen der Eimerkette); `IN LOOP`: in der Feedback-Schleife jeder Einheit, jede Wiederholung wird erneut gechorust (verschmiert die Delay-Zeit leicht, wie ein echter Chorus in der Schleife).
 
 ### Einheitliche Symbolik
 
@@ -161,12 +181,11 @@ Gleiche Funktion = gleiches Symbol und gleiche Farbe: **Dry** hat ein neutrales 
 - **Standalone:** Windows meldet "Audio input is muted to avoid feedback loop". Das ist der Schutz gegen Rückkopplung zwischen Lautsprecher und Mikro, kein Fehler. Mit `Settings...` lässt sich der Eingang freigeben.
 - **Binaural** nur mit Kopfhörern verwenden.
 - **Input-Gain / Drive:** Über 0 dB sättigt der Input weich mit leichtem Analog-Charakter (mehr Gain = mehr Drive, bis +24 dB). Bei 0 dB oder darunter bleibt der Input unverändert. Unter 0 dB wird außerdem die Sättigung in der Feedback-Schleife schwächer: Sie bekommt einen sauberen linearen Bereich, der mit sinkendem Gain wächst (bei -24 dB sauber bis -1,9 dBFS), die Obergrenze bleibt, sodass Feedback 110 % begrenzt bleibt. Bei 44,1/48 kHz laufen die Sättigungen mit doppelter Abtastrate (weniger "digitale" Spiegelfrequenzen). Mit `GAIN ON DRY` gilt es auch für den Anteil des Originals, der über diese Einheit läuft. Der Drive sitzt außerdem **in der Feedback-Schleife**: Jede Wiederholung läuft erneut durch die Sättigung, späte Repeats werden dichter und schmutziger (Space-Echo-/Pedal-Verhalten), bleiben aber stabil und klingen bei Feedback unter 100 % ab.
-- **Live-Modulation** (Modulationsseite): zeigt die letzten 4 Sekunden, im Stil der Karten und mit den Funktionsfarben (LFO pink, Hüllkurve creme, Delay in der Einheitsfarbe, Filter lila). Oben der LFO als echte Kurve (bei Phase R zwei Kurven), dann die Hüllkurve des Eingangssignals, darunter die Wirkung auf Delay-Zeit und Filter, jeweils mit der Amplitude, die `Delay depth` bzw. `Filter depth` ergeben.
 - **Envelope Mix** wirkt nur, wenn `Delay depth` oder `Filter depth` größer als 0 ist (der Filter muss dafür an sein). Die Hüllkurve folgt der Lautstärke des Eingangssignals der Einheit.
 
 ## Parameterliste
 
-Je Einheit (Präfix `a_` bis `d_`, 59 Parameter), global 12 Parameter und im Expert-Bereich 61. Alle sind automatisierbar und werden im Host-Zustand gespeichert.
+Je Einheit (Präfix `a_` bis `d_`, 60 Parameter), global 13 Parameter und im Expert-Bereich 68. Alle sind automatisierbar und werden im Host-Zustand gespeichert.
 
 ### Echo-Seite
 
@@ -213,6 +232,7 @@ Je Einheit (Präfix `a_` bis `d_`, 59 Parameter), global 12 Parameter und im Exp
 | `fPhase` | LFO Phase Filter (Filter-Modulation gegen Delay-Modulation verschieben) | 0-360 Grad | 0 |
 | `pattern`, `steps`, `glide`, `seed` | Schritt-Muster statt der LFO-Welle (Off, Stairs, Zigzag, Syncopated, Random; ein LFO-Zyklus = ein Muster), Stufen, Glide (0 = springt), Seed für Random (Taste NEW SEED) | 5 Stufen, 8/16, 0-100 %, 1-999 | Off, 16, 0, 1 |
 | `bellOn`, `bellHz`, `bellGain`, `bellQ` | Freies Bell-Band in der Feedback-Schleife (Doppelklick auf eine freie Stelle der Filterkurve; ziehen = Frequenz/Gain, Alt = Q, Doppelklick auf das Band entfernt es). Gleich für `gf_bell*` und `nz_bell*` | aus, 20 Hz-20 kHz, -18..+18 dB, Q 0,3-10 | aus, 1 kHz, 0 dB, 1 |
+| `wow` | Wow/Flutter (Bandlauf-Schwankung der Lesestelle, unabhängig vom LFO) | 0-100 % | 0 |
 | `tape` | Tape: Schreibweg (Eingang + Feedback) mit Band-Charakter (Pre-/De-Emphasis, weiche Sättigung, Head Bump, Höhenverlust); jede Wiederholung läuft erneut durchs Band | an/aus | aus |
 | `lfoAmt`, `envAmt` | LFO Factor, Env Factor (Faktor auf LFO- bzw. Hüllkurven-Anteil, wirkt auf Delay und Filter; ersetzt seit Zustandsversion 8 den Schalter `x4`) | 0,1-10 | 1 |
 | `dDepth` | Mod Delay Depth | 0-100 % (bis 10 ms, mal Faktor bis 100 ms) | 0 |
@@ -234,6 +254,7 @@ Je Einheit (Präfix `a_` bis `d_`, 59 Parameter), global 12 Parameter und im Exp
 | `algo` | Algorithm | 10 Algorithmen | Parallel |
 | `gMix` | Global Dry/Wet (einziger Regler für das Original) | 0-100 % | 50 % |
 | `gOut` | Global Output | -24..+12 dB | 0 |
+| `freezeAll` | Freeze All (alle Einheiten halten) | an/aus | aus |
 | `routeMode` | Routing-Modus: Audio (Einheiten speisen sich), Phase (die Echos der Quelle verschieben die Lesestelle der gespeisten Einheit, die den Eingang bekommt), Phase + Dry (ganzer Ausgang der Quelle inkl. Original) | 3 Stufen | Audio |
 | `routeDepth` | Phase Depth (Lese-Verschiebung bei Vollaussteuerung, quadratisch: 25 % = 0,6 ms, 100 % = 10 ms) | 0-100 % | 25 % |
 | `gFb` | Feedback Scale (über 100 % wachsen die Wiederholungen bis in die Sättigung) | 0-200 % | 100 % |
@@ -253,7 +274,7 @@ Je Einheit (Präfix `a_` bis `d_`, 59 Parameter), global 12 Parameter und im Exp
 | `gf_inclDry` | Include dry (auch das Original filtern) | an/aus | aus |
 | `gf_skipFirst` | Skip 1st echo (erstes Echo jeder Einheit nicht filtern) | an/aus | aus |
 | `gf_lfoOn`, `gf_wave`, `gf_rate`, `gf_sync`, `gf_div` | LFO an, Form, Rate (0,01-20 Hz), Sync, Division | | an, Sine, 0,5 Hz, aus, 1/4 |
-| `gf_depth`, `gf_phase` | Modulationstiefe (bis +/-2 Oktaven), Phase R (rechts gegen links) | 0-100 %, 0-360 Grad | 0, 0 |
+| `gf_depth`, `gf_phase` | Modulationstiefe (bis +/-2 Oktaven), Phase (Versatz rechts gegen links) | 0-100 %, 0-360 Grad | 0, 0 |
 | `gf_env` | Envelope Mix: Modulationsquelle 0 = LFO, 100 % = Lautstärke des Eingangs (lauter = Filter höher) | 0-100 % | 0 |
 | `nz_on` | Noise an | an/aus | aus |
 | `nz_level`, `nz_color`, `nz_crackle`, `nz_width` | Pegel, Farbe (0 braun, 0,5 rosa, 1 weiß), Knistern, Breite | 0-100 % | 30 %, 50 %, 0, 100 % |
@@ -263,6 +284,8 @@ Je Einheit (Präfix `a_` bis `d_`, 59 Parameter), global 12 Parameter und im Exp
 | `nz_depthF`, `nz_depthL`, `nz_phase`, `nz_env` | Filter-Tiefe, Pegel-Tiefe, Phase (Pegel gegen Filter), Hüllkurve | 0-100 %, 0-360 Grad | 0 |
 | `nz_posX`, `nz_posY`, `nz_posZ` | Position der Noise | -1..+1 | 0 / 0,2 / 0 |
 | `nz_panAmt`, `nz_panRate`, `nz_panSync`, `nz_panDiv` | Auto-Pan der Noise (eigener Sinus-LFO): Amount (0 = aus, 100 % = ganz links bis ganz rechts), Frequenz, Sync, Notenwert | 0-100 %, 0,01-20 Hz | 0, 0,5 Hz, aus, 1/4 |
+| `st_width`, `st_enhance`, `st_inclDry` | Stereo: Breite, Enhance, auch das Original | 0-200 %, 0-100 %, an/aus | 100 %, 0, aus |
+| `ch_on`, `ch_mode`, `ch_mix`, `ch_place` | Analoger Chorus: an, Modus (I, II, I + II), Mix, Platz (On Echoes, In Loop) | | aus, I, 50 %, On Echoes |
 | `dk_on` | Ducking an | an/aus | aus |
 | `dk_threshold`, `dk_amount` | Threshold, Absenkung | -60..0 dB, 0-40 dB | -30 dB, 12 dB |
 | `dk_attack`, `dk_release` | Attack, Release | 0,1-200 ms, 20-3000 ms | 10 ms, 400 ms |
@@ -270,7 +293,8 @@ Je Einheit (Präfix `a_` bis `d_`, 59 Parameter), global 12 Parameter und im Exp
 ## Technik
 
 - `Source/DelayUnit.*`: eine Echo-Einheit. Hermite-interpolierte Delayline (max. 16 s, exakte Puffergröße, Lese-Index in double), Feedback mit HP/LP und `tanh`-Sättigung (bei 44,1/48 kHz 2-fach überabgetastet, `Source/Oversampler.h`), Übergangsmodi (Repitch glättet die Zeit, Fade und Jump blenden zwischen zwei Abgriffen), LFO, Hüllkurvenfolger.
-- `Source/Spatializer.*`: 3D-Platzierung (Stereo und Binaural).
+- `Source/Tape.h`: Bandstufe für den Schreibweg einer Einheit (TAPE). `Source/Chorus.h`: analoger Chorus (Eimerketten-Stil).
+- `Source/Spatializer.*`: 3D-Platzierung (Stereo-Bühne und Binaural).
 - `Source/GlobalFilter.*`, `Source/NoiseSource.*`: globaler Filter und Noise-Quelle.
 - `Source/QuadEngine.*`: vier Einheiten, Algorithmen, Mute/Solo, Original-Spur (trennt Original und Echos am Ausgang), gewichtete Ausgangssumme, globaler Mix, Ducking, Soft-Limiter, Pegel für die UI. Reines DSP ohne Plugin-Abhängigkeit, daher offline testbar.
 - `Source/Params.*`, `Source/Presets.*`: APVTS-Layout, lockfreies Lesen der Parameter, Start-Presets.

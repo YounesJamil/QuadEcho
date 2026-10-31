@@ -54,6 +54,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<FloatP> (juce::ParameterID { kIdGlobalFb, 1 }, "Feedback Scale", Range (0.0f, 2.0f, 0.001f), 1.0f, unit ("")));
     layout.add (std::make_unique<BoolP> (juce::ParameterID { kIdLimiter, 1 }, "Soft Limiter", true));
     layout.add (std::make_unique<BoolP> (juce::ParameterID { kIdLimitDry, 1 }, "Limiter On Dry", false));
+    layout.add (std::make_unique<BoolP> (juce::ParameterID { kIdFreezeAll, 1 }, "Freeze All", false));
     layout.add (std::make_unique<ChoiceP> (juce::ParameterID { kIdRouteMode, 1 }, "Routing Mode", juce::StringArray { "Audio", "Phase", "Phase + Dry" }, 0));
     layout.add (std::make_unique<FloatP> (juce::ParameterID { kIdRouteDepth, 1 }, "Phase Depth", Range (0.0f, 1.0f, 0.001f), 0.25f, unit ("")));
 
@@ -78,7 +79,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         g->addChild (std::make_unique<BoolP> (id (gfSync), "GF LFO Sync", false));
         g->addChild (std::make_unique<ChoiceP> (id (gfDiv), "GF LFO Division", noteDivNames(), 8));
         g->addChild (std::make_unique<FloatP> (id (gfDepth), "GF Mod Depth", Range (0.0f, 1.0f, 0.001f), 0.0f, unit ("")));
-        g->addChild (std::make_unique<FloatP> (id (gfPhase), "GF LFO Phase R", Range (0.0f, 360.0f, 0.1f), 0.0f, unit ("deg")));
+        g->addChild (std::make_unique<FloatP> (id (gfPhase), "GF LFO Phase", Range (0.0f, 360.0f, 0.1f), 0.0f, unit ("deg")));
         g->addChild (std::make_unique<FloatP> (id (gfEnv), "GF Envelope Mix", Range (0.0f, 1.0f, 0.001f), 0.0f, unit ("")));
         g->addChild (std::make_unique<BoolP> (id (gfBellOn), "GF Bell On", false));
         g->addChild (std::make_unique<FloatP> (id (gfBellHz), "GF Bell Freq", bellHzRange(), 1000.0f, unit ("Hz")));
@@ -126,6 +127,20 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         g->addChild (std::make_unique<FloatP> (id (nzBellHz), "Noise Bell Freq", bellHzRange(), 1000.0f, unit ("Hz")));
         g->addChild (std::make_unique<FloatP> (id (nzBellGain), "Noise Bell Gain", Range (-18.0f, 18.0f, 0.1f), 0.0f, unit ("dB")));
         g->addChild (std::make_unique<FloatP> (id (nzBellQ), "Noise Bell Q", bellQRange(), 1.0f, unit ("")));
+        layout.add (std::move (g));
+    }
+
+    // ---- Expert: Stereo und Chorus ----
+    {
+        auto g = std::make_unique<juce::AudioProcessorParameterGroup> ("stereo", "Stereo", "|");
+        auto id = [] (int k) { return juce::ParameterID { kGlobalIds[k], 1 }; };
+        g->addChild (std::make_unique<FloatP> (id (stWidth), "Stereo Width", Range (0.0f, 2.0f, 0.001f), 1.0f, unit ("")));
+        g->addChild (std::make_unique<FloatP> (id (stEnhance), "Stereo Enhance", Range (0.0f, 1.0f, 0.001f), 0.0f, unit ("")));
+        g->addChild (std::make_unique<BoolP> (id (stInclDry), "Stereo Include Dry", false));
+        g->addChild (std::make_unique<BoolP> (id (chOn), "Chorus On", false));
+        g->addChild (std::make_unique<ChoiceP> (id (chMode), "Chorus Mode", juce::StringArray { "I", "II", "I + II" }, 0));
+        g->addChild (std::make_unique<FloatP> (id (chMix), "Chorus Mix", Range (0.0f, 1.0f, 0.001f), 0.5f, unit ("")));
+        g->addChild (std::make_unique<ChoiceP> (id (chPlace), "Chorus Place", juce::StringArray { "On Echoes", "In Loop" }, 0));
         layout.add (std::move (g));
     }
 
@@ -195,6 +210,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         group->addChild (std::make_unique<BoolP> (id (pFreeze), L + "Freeze", false));
         group->addChild (std::make_unique<BoolP> (id (pFbStable), L + "Feedback Stable", false));
         group->addChild (std::make_unique<BoolP> (id (pTape), L + "Tape", false));
+        group->addChild (std::make_unique<FloatP> (id (pWow), L + "Wow/Flutter", Range (0.0f, 1.0f, 0.001f), 0.0f, unit ("")));
         group->addChild (std::make_unique<ChoiceP> (id (pPattern), L + "Pattern", juce::StringArray { "Off", "Stairs", "Zigzag", "Syncopated", "Random" }, 0));
         group->addChild (std::make_unique<ChoiceP> (id (pSteps), L + "Pattern Steps", juce::StringArray { "8", "16" }, 1));
         group->addChild (std::make_unique<FloatP> (id (pGlide), L + "Pattern Glide", Range (0.0f, 1.0f, 0.001f), 0.0f, unit ("")));
@@ -234,6 +250,7 @@ ParamReader::ParamReader (juce::AudioProcessorValueTreeState& apvts)
     gFb = apvts.getRawParameterValue (kIdGlobalFb);
     limiter = apvts.getRawParameterValue (kIdLimiter);
     limitDry = apvts.getRawParameterValue (kIdLimitDry);
+    freezeAll = apvts.getRawParameterValue (kIdFreezeAll);
     routeMode = apvts.getRawParameterValue (kIdRouteMode);
     routeDepth = apvts.getRawParameterValue (kIdRouteDepth);
     for (int g = 0; g < gCount; ++g) glob[(size_t) g] = apvts.getRawParameterValue (kGlobalIds[g]);
@@ -256,7 +273,7 @@ void ParamReader::readUnit (int u, EchoSettings& c, PosSettings& pos) const
     c.phaseDeg = f (pPhase); c.lfoOn = b (pLfoOn); c.filterPhaseDeg = f (pFPhase); c.delayDepth = f (pDDepth);
     c.filterDepth = f (pFDepth); c.envMix = f (pEnv); c.freeze = b (pFreeze); c.stableFb = b (pFbStable);
     c.syncMode = i (pSyncMode); c.syncModeR = i (pSyncModeR); c.sixL = i (pSixL); c.sixR = i (pSixR); c.offsetL = f (pOffsetL); c.hpRes = f (pHpRes); c.hpBoost = f (pHpBoost); c.lpBoost = f (pLpBoost);
-    c.lfoAmt = f (pLfoAmt); c.envAmt = f (pEnvAmt); c.tape = b (pTape);
+    c.lfoAmt = f (pLfoAmt); c.envAmt = f (pEnvAmt); c.tape = b (pTape); c.wow = f (pWow);
     c.pattern = i (pPattern); c.steps = i (pSteps) == 0 ? 8 : 16; c.glide = f (pGlide); c.seed = i (pSeed);
     c.bellOn = b (pBellOn); c.bellHz = f (pBellHz); c.bellGain = f (pBellGain); c.bellQ = f (pBellQ);
     pos = { f (pPosX), f (pPosY), f (pPosZ) };
@@ -276,6 +293,7 @@ void ParamReader::read (EngineSettings& s) const
     s.feedbackScale = gFb->load();
     s.softLimiter = limiter->load() > 0.5f;
     s.limitDry = limitDry->load() > 0.5f;
+    s.freezeAll = freezeAll->load() > 0.5f;
     s.routeMode = (int) (routeMode->load() + 0.5f);
     s.routeDepth = routeDepth->load();
 
@@ -295,6 +313,8 @@ void ParamReader::read (EngineSettings& s) const
     n.pos = { gf (nzPosX), gf (nzPosY), gf (nzPosZ) };
     n.bellOn = gb (nzBellOn); n.bellHz = gf (nzBellHz); n.bellGain = gf (nzBellGain); n.bellQ = gf (nzBellQ);
     n.panAmt = gf (nzPanAmt); n.panRateHz = gf (nzPanRate); n.panSync = gb (nzPanSync); n.panDiv = gi (nzPanDiv);
+    s.stereo.width = gf (stWidth); s.stereo.enhance = gf (stEnhance); s.stereo.includeDry = gb (stInclDry);
+    s.chorus.on = gb (chOn); s.chorus.mode = gi (chMode); s.chorus.mix = gf (chMix); s.chorus.place = gi (chPlace);
     auto& d = s.duck;
     d.on = gb (dkOn); d.thresholdDb = gf (dkThreshold); d.amountDb = gf (dkAmount); d.attackMs = gf (dkAttack); d.releaseMs = gf (dkRelease);
 }

@@ -108,6 +108,11 @@ inline juce::String tooltipForExpert (const juce::String& id)
     if (is (dkThreshold)) return "Input level from which the echoes are lowered (soft knee, +-3 dB). The INPUT bar on the right shows the current input level, the white mark the threshold.";
     if (is (dkAmount)) return "How far the echoes are lowered while you play.";
     if (is (dkAttack)) return "How fast the echoes dip when you start playing.";
+    if (is (stWidth)) return "Stereo width: 0 = mono, 100% = unchanged, 200% = twice as wide.";
+    if (is (stEnhance)) return "More space: a delayed, high-passed copy of the middle goes to the sides. Disappears in mono, so it stays mono-compatible.";
+    if (is (stInclDry)) return "Off: only the echoes. On: the original is widened too.";
+    if (is (chOn)) return "Analog chorus in bucket-brigade style: triangle LFO, opposite on the right, dark and slightly saturated.";
+    if (is (chMix)) return "0 = dry, 50% = dry and chorus equally loud (classic), 100% = only chorus.";
     if (is (dkRelease)) return "How fast the echoes come back after you stop.";
     return {};
 }

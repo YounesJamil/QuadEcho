@@ -54,11 +54,16 @@ void QuadEngine::prepare (double sampleRate)
     for (auto& o : dryPanSm) o.reset (sampleRate, 0.05);
     activeSm.reset (sampleRate, 0.02);
     deadSm.reset (sampleRate, 0.02);
+    soloDeadSm.reset (sampleRate, 0.02);
     intoSm.reset (sampleRate, 0.02);
     inclDrySm.reset (sampleRate, 0.03);
     mixSm.reset (sampleRate, 0.03);
     outSm.reset (sampleRate, 0.03);
     routeDepthSm.reset (sampleRate, 0.05);
+    for (auto* sm : { &stWidthSm, &stEnhSm, &stInclSm }) sm->reset (sampleRate, 0.05);
+    for (auto& e : enhancer) e.prepare ((int) std::lround (0.009 * sampleRate));
+    enhHpA = 1.0f - std::exp (-6.2831853f * 300.0f / (float) sampleRate);
+    echoChorus.prepare (sampleRate);
     for (auto& p : unitPeaks) p.store (0.0f);
     duckEnvRel = 1.0f - std::exp (-1.0f / (0.03f * (float) sr));
     reset();
@@ -77,6 +82,9 @@ void QuadEngine::reset()
     gate = 1.0f;
     gateState = Gate::Idle;
     duckEnv = duckDb = 0.0f;
+    for (auto& e : enhancer) e.reset();
+    stereoLive = false;
+    echoChorus.reset();
     initialised = false;
 }
 
@@ -142,6 +150,9 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
         activeAlgo = requested;
         activeRoute = requestedRoute;
         routeDepthSm.setCurrentAndTargetValue (s.routeDepth);
+        stWidthSm.setCurrentAndTargetValue (s.stereo.width);
+        stEnhSm.setCurrentAndTargetValue (s.stereo.enhance);
+        stInclSm.setCurrentAndTargetValue (s.stereo.includeDry ? 1.0f : 0.0f);
         mixSm.setCurrentAndTargetValue (s.globalMix);
         outSm.setCurrentAndTargetValue (dbToGain (s.globalOutDb));
         intoSm.setCurrentAndTargetValue (s.noise.into);
@@ -161,6 +172,9 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
     inclDrySm.setTargetValue (s.gfilter.includeDry ? 1.0f : 0.0f);
 
     routeDepthSm.setTargetValue (s.routeDepth);
+    stWidthSm.setTargetValue (s.stereo.width);
+    stEnhSm.setTargetValue (s.stereo.enhance);
+    stInclSm.setTargetValue (s.stereo.includeDry ? 1.0f : 0.0f);
 
     // Algorithmus- oder Routing-Wechsel: Ausgang kurz ausblenden, Topologie wechseln, wieder einblenden
     if ((requested != activeAlgo || requestedRoute != activeRoute) && gateState == Gate::Idle) gateState = Gate::Down;
@@ -310,6 +324,10 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
             wasActive[uu] = true;
             EchoSettings es = s.echo[uu];
             es.feedback *= s.feedbackScale;
+            es.freeze = es.freeze || s.freezeAll;
+            es.chorusLoop = s.chorus.on && s.chorus.place == ChorusInLoop;
+            es.chorusMode = s.chorus.mode;
+            es.chorusMix = s.chorus.mix;
             units[uu].setSongPosition (ppq);
             units[uu].process (src.l.data(), src.r.data(), tmp.l.data(), tmp.r.data(), n, es, bpm,
                                nullptr, nullptr,
@@ -444,6 +462,8 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
     // stumme Zweige zaehlen fuer die Mittelung mit, klingen aber nicht
     if (snapWeights) deadSm.setCurrentAndTargetValue (anyOut ? placement.dead : 0.0f);
     else             deadSm.setTargetValue (anyOut ? placement.dead : 0.0f);
+    if (snapWeights) soloDeadSm.setCurrentAndTargetValue (anyOut ? placement.soloDead : 0.0f);
+    else             soloDeadSm.setTargetValue (anyOut ? placement.soloDead : 0.0f);
 
     // Noise direkt zum Ausgang, an seiner Position im Raum
     if (noiseLive)
@@ -485,7 +505,7 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
             }
         }
         sumW += deadSm.getNextValue();
-        const float inv = gate / std::max (sumW, 1e-3f);
+        const float inv = gate / std::max (sumW + soloDeadSm.getNextValue(), 1e-3f);   // Echos: bei Solo wie im Mix gemittelt
         const float act = activeSm.getNextValue();
         const auto ui = (size_t) i;
         const float dryG = dryGa[ui], wetG = wetGa[ui];
@@ -511,14 +531,37 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
     }
     if (gfOn) gfilter.process (5, dryFL.data(), dryFR.data(), n);   // "Include dry": Original mitfiltern (weich ueberblendet)
 
+    // Chorus auf der Summe der Echos (mit leisem Rauschen der Eimerkette)
+    echoChorus.setTarget (s.chorus.mode, s.chorus.on && s.chorus.place == ChorusOnEchoes ? s.chorus.mix : 0.0f);
+    if (echoChorus.active())
+    {
+        for (int i = 0; i < n; ++i) echoChorus.process (busL[(size_t) i], busR[(size_t) i], true);
+        if (! echoChorus.active()) echoChorus.reset();
+    }
+
+    // Stereo: nur wenn nicht neutral (Breite 1, Enhance 0) oder noch in der Glaettung
+    const bool stereoWanted = s.stereo.width != 1.0f || s.stereo.enhance > 0.0f || stWidthSm.isSmoothing() || stEnhSm.isSmoothing();
+    if (! stereoWanted && stereoLive) { for (auto& e : enhancer) e.reset(); stereoLive = false; }
+    if (stereoWanted) stereoLive = true;
+
     float masterPk = 0.0f;
     for (int i = 0; i < n; ++i)
     {
         const auto ui = (size_t) i;
-        const float dl = dryL[ui] + (dryFL[ui] - dryL[ui]) * inclA[ui];
-        const float dr = dryR[ui] + (dryFR[ui] - dryR[ui]) * inclA[ui];
-        float ol = (dl + busL[ui]) * outGa[ui];
-        float orr = (dr + busR[ui]) * outGa[ui];
+        float dl = dryL[ui] + (dryFL[ui] - dryL[ui]) * inclA[ui];
+        float dr = dryR[ui] + (dryFR[ui] - dryR[ui]) * inclA[ui];
+        float bl = busL[ui], br = busR[ui];
+        if (stereoLive)
+        {
+            const float w = stWidthSm.getNextValue(), e = stEnhSm.getNextValue(), inc = stInclSm.getNextValue();
+            enhancer[0].process (bl, br, w, e, enhHpA);
+            float sl = dl, sr2 = dr;   // Original: Stereo weich zugeschaltet ("Include dry")
+            enhancer[1].process (sl, sr2, w, e, enhHpA);
+            dl += (sl - dl) * inc;
+            dr += (sr2 - dr) * inc;
+        }
+        float ol = (dl + bl) * outGa[ui];
+        float orr = (dr + br) * outGa[ui];
         if (s.softLimiter)
         {
             if (s.limitDry) { ol = softLimit (ol); orr = softLimit (orr); }

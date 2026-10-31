@@ -129,10 +129,10 @@ inline double tailSeconds (const EngineSettings& s, double bpm, double sr)
     for (const auto& e : s.echo)
     {
         if (! e.on) continue;
-        if (e.freeze) return inf;
+        if (e.freeze || s.freezeAll) return inf;
         double msL, msR;
         delayTimesMs (e, bpm, msL, msR);
-        const double delay = std::max (msL, msR) * 0.001 + 0.01 * std::max (e.lfoAmt, e.envAmt) * e.delayDepth;
+        const double delay = std::max (msL, msR) * 0.001 + 0.01 * std::max (e.lfoAmt, e.envAmt) * e.delayDepth + 0.001 * e.wow;
         const double peak = loopFilterPeakGain (e, sr);
         const double loop = std::abs ((double) e.feedback * (double) s.feedbackScale) * (e.stableFb ? std::min (peak, 1.0) : peak);
         if (loop >= 1.0) return inf;

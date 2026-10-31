@@ -11,7 +11,7 @@ enum P
     pFb, pFbInv, pInGain, pInDry, pPosDry, pHpOn, pLpOn, pHp, pLp, pRes, pTrans,
     pMix, pOut, pWidth,
     pLfoOn, pWave, pRate, pLfoSync, pLfoDiv, pPhase, pFPhase, pDDepth, pFDepth, pEnv,
-    pPosX, pPosY, pPosZ, pFreeze, pSyncMode, pSixL, pSixR, pOffsetL, pHpRes, pSyncModeR, pHpBoost, pLpBoost, pFbStable, pLfoAmt, pEnvAmt, pTape, pBellOn, pBellHz, pBellGain, pBellQ, pPattern, pSteps, pGlide, pSeed,
+    pPosX, pPosY, pPosZ, pFreeze, pSyncMode, pSixL, pSixR, pOffsetL, pHpRes, pSyncModeR, pHpBoost, pLpBoost, pFbStable, pLfoAmt, pEnvAmt, pTape, pBellOn, pBellHz, pBellGain, pBellQ, pPattern, pSteps, pGlide, pSeed, pWow,
     pCount
 };
 
@@ -23,7 +23,7 @@ inline const char* const kParamNames[pCount] = {
     "fb", "fbInv", "inGain", "inDry", "posDry", "hpOn", "lpOn", "hp", "lp", "res", "trans",
     "mix", "out", "width",
     "lfoOn", "wave", "rate", "lfoSync", "lfoDiv", "phase", "fPhase", "dDepth", "fDepth", "env",
-    "posX", "posY", "posZ", "freeze", "syncMode", "sixL", "sixR", "offsetL", "hpRes", "syncModeR", "hpBoost", "lpBoost", "fbStable", "lfoAmt", "envAmt", "tape", "bellOn", "bellHz", "bellGain", "bellQ", "pattern", "steps", "glide", "seed" };
+    "posX", "posY", "posZ", "freeze", "syncMode", "sixL", "sixR", "offsetL", "hpRes", "syncModeR", "hpBoost", "lpBoost", "fbStable", "lfoAmt", "envAmt", "tape", "bellOn", "bellHz", "bellGain", "bellQ", "pattern", "steps", "glide", "seed", "wow" };
 
 inline const char* const kUnitLetters[kNumUnits] = { "a", "b", "c", "d" };
 
@@ -44,6 +44,7 @@ enum G
     gfEnv,
     nzPanAmt, nzPanRate, nzPanSync, nzPanDiv,
     gfBellOn, gfBellHz, gfBellGain, gfBellQ, nzBellOn, nzBellHz, nzBellGain, nzBellQ,
+    stWidth, stEnhance, stInclDry, chOn, chMode, chMix, chPlace,
     gCount
 };
 
@@ -56,7 +57,8 @@ inline const char* const kGlobalIds[gCount] = {
     "gf_hpBoost", "gf_lpBoost", "nz_hpBoost", "nz_lpBoost",
     "gf_env",
     "nz_panAmt", "nz_panRate", "nz_panSync", "nz_panDiv",
-    "gf_bellOn", "gf_bellHz", "gf_bellGain", "gf_bellQ", "nz_bellOn", "nz_bellHz", "nz_bellGain", "nz_bellQ" };
+    "gf_bellOn", "gf_bellHz", "gf_bellGain", "gf_bellQ", "nz_bellOn", "nz_bellHz", "nz_bellGain", "nz_bellQ",
+    "st_width", "st_enhance", "st_inclDry", "ch_on", "ch_mode", "ch_mix", "ch_place" };
 
 // Globale Parameter
 inline const char* const kIdAlgo = "algo";
@@ -69,6 +71,7 @@ inline const char* const kIdDoppler = "doppler";
 inline const char* const kIdGlobalFb = "gFb";
 inline const char* const kIdLimiter = "limiter";
 inline const char* const kIdLimitDry = "limitDry";
+inline const char* const kIdFreezeAll = "freezeAll";
 inline const char* const kIdRouteMode = "routeMode";
 inline const char* const kIdRouteDepth = "routeDepth";
 
@@ -94,6 +97,7 @@ private:
     std::atomic<float>* gFb = nullptr;
     std::atomic<float>* limiter = nullptr;
     std::atomic<float>* limitDry = nullptr;
+    std::atomic<float>* freezeAll = nullptr;
     std::atomic<float>* routeMode = nullptr;
     std::atomic<float>* routeDepth = nullptr;
     std::array<std::atomic<float>*, gCount> glob {};

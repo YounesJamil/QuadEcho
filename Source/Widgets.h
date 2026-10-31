@@ -294,7 +294,8 @@ public:
           muteWatch (*p.apvts.getParameter (qe::paramId (unitIndex, qe::pMute)),
                      [this] (float v) { muted = v > 0.5f; repaint(); }),
           freezeWatch (*p.apvts.getParameter (qe::paramId (unitIndex, qe::pFreeze)),
-                       [this] (float v) { frozen = v > 0.5f; repaint(); })
+                       [this] (float v) { frozen = v > 0.5f; repaint(); }),
+          freezeAllWatch (*p.apvts.getParameter (qe::kIdFreezeAll), [this] (float v) { frozenAll = v > 0.5f; repaint(); })
     {
         muteBtn.setTooltip (ui::tooltipForUnitParam (qe::pMute));
         soloBtn.setTooltip (ui::tooltipForUnitParam (qe::pSolo));
@@ -305,6 +306,7 @@ public:
         onAttachment.sendInitialUpdate();
         muteWatch.sendInitialUpdate();
         freezeWatch.sendInitialUpdate();
+        freezeAllWatch.sendInitialUpdate();
     }
 
     void setSelected (bool s) { selected = s; repaint(); }
@@ -334,7 +336,7 @@ public:
         g.drawText (juce::String::charToString ((juce::juce_wchar) ('A' + unit)), dot.toNearestInt(), juce::Justification::centred);
 
         // Freeze: eisblauer Ring um den Punkt (Mute zeigt der leuchtende M-Knopf)
-        if (frozen && unitOn)
+        if ((frozen || frozenAll) && unitOn)
         {
             g.setColour (ui::kNoiseColour);
             g.drawEllipse (dot.expanded (3.0f), 1.6f);
@@ -365,6 +367,6 @@ private:
     std::function<void (int)> select;
     ui::Toggle muteBtn, soloBtn;
     ui::PeakMeter meter;
-    juce::ParameterAttachment onAttachment, muteWatch, freezeWatch;
-    bool unitOn = false, muted = false, frozen = false, selected = false;
+    juce::ParameterAttachment onAttachment, muteWatch, freezeWatch, freezeAllWatch;
+    bool unitOn = false, muted = false, frozen = false, frozenAll = false, selected = false;
 };

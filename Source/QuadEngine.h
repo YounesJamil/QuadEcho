@@ -3,6 +3,7 @@
 #include "GlobalFilter.h"
 #include "NoiseSource.h"
 #include "Spatializer.h"
+#include "Chorus.h"
 
 namespace qe
 {
@@ -58,7 +59,7 @@ private:
     Spatializer noiseSpatial;
     GlobalFilter gfilter;
     std::array<juce::SmoothedValue<float>, kNumUnits> onSm, outW;
-    juce::SmoothedValue<float> activeSm, deadSm, intoSm, inclDrySm;
+    juce::SmoothedValue<float> activeSm, deadSm, soloDeadSm, intoSm, inclDrySm;
     std::array<juce::SmoothedValue<float>, kNumUnits> dryPlaceSm, dryPanSm;   // Place Dry: Anteil und Seite (X)
     std::array<bool, kNumUnits> wasActive { { false, false, false, false } };
     std::array<bool, kNumUnits> spatialLive { { false, false, false, false } };
@@ -73,6 +74,33 @@ private:
     enum class Gate { Idle, Down, Up } gateState = Gate::Idle;
     float gate = 1.0f;
     juce::SmoothedValue<float> mixSm, outSm, routeDepthSm;
+    // Stereo (Expert): Breite/Enhance je fuer Echos und Original (linear, daher getrennt und weich zuschaltbar)
+    struct Enhancer
+    {
+        std::vector<float> buf;
+        int pos = 0;
+        float hp = 0.0f;
+        void prepare (int len) { buf.assign ((size_t) std::max (len, 1), 0.0f); reset(); }
+        void reset() { std::fill (buf.begin(), buf.end(), 0.0f); pos = 0; hp = 0.0f; }
+        // Mitte hochpassgefiltert (300 Hz) und ca. 9 ms verzoegert: gibt sie als Seite dazu, in L + R hebt sie sich auf
+        void process (float& l, float& r, float width, float enh, float hpA)
+        {
+            const float mid = 0.5f * (l + r);
+            float side = 0.5f * (l - r) * width;
+            hp += hpA * (mid - hp);
+            const float delayed = buf[(size_t) pos];
+            buf[(size_t) pos] = mid - hp;
+            pos = pos + 1 == (int) buf.size() ? 0 : pos + 1;
+            side += 0.6f * enh * delayed;
+            l = mid + side;
+            r = mid - side;
+        }
+    };
+    std::array<Enhancer, 2> enhancer;   // 0 = Echos, 1 = Original
+    juce::SmoothedValue<float> stWidthSm, stEnhSm, stInclSm;
+    float enhHpA = 0.04f;
+    bool stereoLive = false;
+    BbdChorus echoChorus;               // Chorus auf der Summe der Echos
     bool initialised = false;
     bool poisoned = false;   // ein Ausgangs-Sample war nicht endlich: am Ende des Chunks alles zuruecksetzen
 };

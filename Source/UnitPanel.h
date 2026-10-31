@@ -161,6 +161,9 @@ public:
             auto digits = [] (const juce::String& t) { return t.retainCharacters (".0123456789").getDoubleValue(); };
             pill (glideBox, glideAttach, pGlide, [] (double v) { return "Glide " + juce::String (v * 100.0, 0) + "%"; },
                   [digits] (const juce::String& t) { return digits (t) / 100.0; }, 0.0, "Glide: 0 = the delay time jumps from step to step, 100% = it slides over the whole step.");
+            pill (wowBox, wowAttach, pWow, [] (double v) { return "Wow " + juce::String (v * 100.0, 0) + "%"; },
+                  [digits] (const juce::String& t) { return digits (t) / 100.0; }, 0.0,
+                  "Wow/Flutter: the tape transport wobbles (slow wow plus fast flutter), each repeat bends a bit more. Independent of the LFO. 0 = off.");
             pill (seedBox, seedAttach, pSeed, [] (double v) { return "Seed " + juce::String ((int) std::lround (v)); }, digits, 1.0, "Seed of the random pattern (drag or type).");
             seedBtn.setButtonText ("NEW SEED");
             seedBtn.setTooltip ("A new random pattern (sets PATTERN to RANDOM).");
@@ -182,7 +185,7 @@ public:
         addChildComponent (echoDisplay);
         addChildComponent (modDisplay);
 
-        for (int p : { pSync, pSyncMode, pSyncModeR, pLink, pMode, pLfoSync, pLfoOn, pPattern })
+        for (int p : { pSync, pSyncMode, pSyncModeR, pLink, pMode, pLfoSync, pLfoOn, pPattern, pHpOn, pLpOn, pBellOn, pEnv, pDDepth, pFDepth })
         {
             watchers.push_back (std::make_unique<juce::ParameterAttachment> (
                 *apvts.getParameter (id (p)), [this] (float) { updateVisibility(); }));
@@ -244,6 +247,7 @@ public:
         at (toggles[pFbInv].get(), juce::Rectangle<int> (f.getX() + 112, f.getY() + 126, 88, 30));
         at (toggles[pFreeze].get(), juce::Rectangle<int> (f.getX() + 204, f.getY() + 126, 88, 30));
         at (toggles[pTape].get(), juce::Rectangle<int> (f.getRight() - 80, f.getY() + 3, 70, 16));
+        wowBox.setBounds (f.getRight() - 160, f.getY() + 3, 74, 16);
 
         echoDisplay.setBounds (cardPreview().withTrimmedTop (4));
         filterGraph.setBounds (cardFilter().reduced (8, 0).withTrimmedTop (20).withTrimmedBottom (8));
@@ -325,6 +329,7 @@ private:
         for (int p : { pMode, pTrans }) choices[(size_t) p]->setVisible (echo);
         for (int p : { pSync, pFbInv, pFreeze, pFbStable, pTape, pInDry, pPosDry, pOn }) toggles[(size_t) p]->setVisible (echo);
         linkToggle->setVisible (echo);
+        wowBox.setVisible (echo);
         echoDisplay.setVisible (echo);
         filterGraph.setVisible (echo);
 
@@ -363,6 +368,17 @@ private:
         seedBox.setEnabled (pat == PatRandom);
         seedBox.setAlpha (pat == PatRandom ? 1.0f : 0.45f);
         if (pat != PatOff) { choices[pWave]->setEnabled (false); choices[pWave]->setAlpha (0.45f); }
+
+        // Abdunkeln, was gerade nichts bewirkt (bleibt einstellbar)
+        auto dimC = [] (juce::Component* c, bool on) { if (c != nullptr) { c->setEnabled (on); c->setAlpha (on ? 1.0f : 0.5f); } };
+        const bool filt = val (pHpOn) || val (pLpOn);
+        dimC (toggles[pFbStable].get(), filt || val (pBellOn));                 // STABLE braucht ein Filter in der Schleife
+        const bool delayMod = cur (pDDepth) > 0.001f, filterMod = filt && cur (pFDepth) > 0.001f;
+        dimC (knobs[pFDepth].get(), filt);                                       // Filter-Tiefe wirkt nur auf HP/LP
+        dimC (knobs[pFPhase].get(), filterMod && lfoOn);
+        dimC (knobs[pEnv].get(), delayMod || filterMod);
+        dimC (knobs[pEnvAmt].get(), (delayMod || filterMod) && cur (pEnv) > 0.001f);
+        dimC (knobs[pLfoAmt].get(), (delayMod || filterMod) && lfoOn && cur (pEnv) < 0.999f);
         modDisplay.setVisible (! echo);
     }
 
@@ -382,8 +398,9 @@ private:
     std::array<std::unique_ptr<ui::NoteDivKnob>, 2> divKnobs;
     std::array<ui::FineSlider, 2> offsetBox { { { juce::Slider::LinearBar, juce::Slider::TextBoxLeft }, { juce::Slider::LinearBar, juce::Slider::TextBoxLeft } } };
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 2> offsetAttach;
-    ui::FineSlider glideBox { juce::Slider::LinearBar, juce::Slider::TextBoxLeft }, seedBox { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> glideAttach, seedAttach;
+    ui::FineSlider glideBox { juce::Slider::LinearBar, juce::Slider::TextBoxLeft }, seedBox { juce::Slider::LinearBar, juce::Slider::TextBoxLeft },
+                   wowBox { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> glideAttach, seedAttach, wowAttach;
     juce::TextButton seedBtn;
     EchoDisplay echoDisplay;
     ModDisplay modDisplay;

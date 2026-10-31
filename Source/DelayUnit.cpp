@@ -28,10 +28,12 @@ void DelayUnit::prepare (double sampleRate)
     depthSm.reset (sampleRate, 0.05);
     fDepthSm.reset (sampleRate, 0.05);
     freezeSm.reset (sampleRate, 0.05);
+    wowSm.reset (sampleRate, 0.05);
 
     useOs = sr < 88200.0;   // ab 88,2 kHz landen die staerksten Spiegelfrequenzen ohnehin ueber dem Hoerbereich
     osLatency = useOs ? (double) Oversampler2x::kLatency : 0.0;
     tapeW.prepare (sr, useOs);
+    chorus.prepare (sr);
     tapeF.prepare (sr, useOs);
     tapeSm.reset (sampleRate, 0.05);
     rpCoef  = 1.0 - std::exp (-1.0 / (0.2 * sr));
@@ -67,7 +69,7 @@ void DelayUnit::resetState()
 {
     for (auto& l : line) { l.fading = false; l.init = false; }
     hp.reset(); lp.reset(); hp1.reset(); lp1.reset(); peakHp.reset(); peakLp.reset(); peakBell.reset();
-    lfoPos = 0.0; modSm[0] = modSm[1] = fModSm = 0.0; env = 0.0; envMapped = 0.0f;
+    lfoPos = wowPos = flutterPos = 0.0; modSm[0] = modSm[1] = fModSm = 0.0; env = 0.0; envMapped = 0.0f;
     lastTransition = -1;
     stableComp = stableTarget = 1.0f;
     stableKey = {};
@@ -76,6 +78,7 @@ void DelayUnit::resetState()
     for (auto& d : rDelay) d.reset();
     for (auto& d : xDelay) d.reset();
     tapeW.reset(); tapeF.reset(); tapeLive = false;
+    chorus.reset();
     xOsWarm = -1;
     framePos = 0;
     initialised = false;
@@ -184,6 +187,7 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
         fDepthSm.setCurrentAndTargetValue (s.filterDepth);
         freezeSm.setCurrentAndTargetValue (frozen ? 1.0f : 0.0f);
         tapeSm.setCurrentAndTargetValue (s.tape ? 1.0f : 0.0f);
+        wowSm.setCurrentAndTargetValue (s.wow);
         qSm[0] = qHpTarget; qSm[1] = qLpTarget;
         boostSm[0] = s.hpBoost; boostSm[1] = s.lpBoost;
         bellSm = s.bellOn ? s.bellGain : 0.0f;
@@ -200,6 +204,9 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
     fDepthSm.setTargetValue (s.filterDepth);
     freezeSm.setTargetValue (frozen ? 1.0f : 0.0f);
     tapeSm.setTargetValue (s.tape ? 1.0f : 0.0f);
+    chorus.setTarget (s.chorusMode, s.chorusLoop ? s.chorusMix : 0.0f);
+    const bool chorusWasLive = chorus.active();
+    wowSm.setTargetValue (s.wow);
 
     const bool needFirst = firstOutL != nullptr;
 
@@ -324,6 +331,18 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
             float fe0 = 0.0f, fe1 = 0.0f;
             double pm0 = 0.0, pm1 = 0.0;   // Phase-Modus: Lesestelle folgt dem Signal der Quelleinheit (im Freeze nicht)
             if (phaseModL != nullptr) { const double k = 0.001 * sr * (1.0 - (double) fz); pm0 = phaseModL[i] * k; pm1 = phaseModR[i] * k; }
+            // Wow/Flutter: ein Bandlauf fuer beide Seiten. Wow ~0,9 Hz bis 1 ms, Flutter ~9 Hz bis 0,03 ms (weich zufaellig,
+            // reproduzierbar); bei 100 % etwa +-0,5 % Tonhoehe. Im Freeze aus (der gehaltene Loop soll nicht leiern).
+            wowPos += 0.9 / sr;
+            flutterPos += 9.0 / sr;
+            const float wowAmt = wowSm.getNextValue();
+            if (wowAmt > 0.0f)
+            {
+                const double w = wowAmt * (1.0 - (double) fz) * sr
+                               * (0.001 * lfoWaveD (SmoothRandom, wowPos) + 0.00003 * lfoWaveD (SmoothRandom, flutterPos + 1000.0));
+                pm0 += w;
+                pm1 += w;
+            }
             const float y0 = readLine (line[0], modSm[0] * depthNow + pm0, target[0], trans, fe0, needFirst, frozen);
             const float y1 = readLine (line[1], modSm[1] * depthNow + pm1, target[1], trans, fe1, needFirst, frozen);
 
@@ -337,6 +356,7 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
             if (lpPeak) { f0 = peakLp.process (0, f0); f1 = peakLp.process (1, f1); }
             if (bell) { f0 = peakBell.process (0, f0); f1 = peakBell.process (1, f1); }
             if (stableComp != 1.0f) { f0 *= stableComp; f1 *= stableComp; }
+            if (chorusWasLive) chorus.process (f0, f1, false);   // jede Wiederholung erneut gechorust
             const float xt0 = x0, xt1 = x1, ft0 = f0, ft1 = f1;   // TAPE: Eingang und Feedback vor den Saettigungen von Clean
             float rr0 = r0, rr1 = r1;   // unveraenderter Loop fuer Freeze, zeitlich passend zu den Saettigungspfaden
             if (useOs)
@@ -456,6 +476,7 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
             framePos = 0;
         }
     }
+    if (chorusWasLive && ! chorus.active()) chorus.reset();
     // Nicht-endlicher Zustand (Huellkurve, Modulation, Filter) z. B. durch einen NaN-Parameter: Einheit neu aufsetzen
     if (poisoned || ! std::isfinite (env) || ! std::isfinite (modSm[0] + modSm[1] + fModSm))
     {

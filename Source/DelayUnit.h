@@ -4,6 +4,7 @@
 #include "DspTypes.h"
 #include "Oversampler.h"
 #include "Tape.h"
+#include "Chorus.h"
 
 namespace qe
 {
@@ -65,6 +66,8 @@ private:
     juce::SmoothedValue<float> inGainSm, fbSm, mixSm, outSm, widthSm, fDepthSm, driveSm, kneeSm, freezeSm;
     juce::SmoothedValue<double> depthSm;   // Modulationstiefe in Samples: bestimmt den Lese-Index
     double lfoPos = 0.0;   // LFO-Position in Zyklen, fortlaufend
+    double wowPos = 0.0, flutterPos = 0.0;   // Wow/Flutter: eigene Zufallsverlaeufe, fortlaufend
+    juce::SmoothedValue<float> wowSm;
     double songPpq = -1.0;
     // Huellkurve und Modulationsglaettung in double: bei 192 kHz sind die Koeffizienten ~1e-5, in float ungenau
     double modSm[2] = { 0.0, 0.0 };
@@ -99,6 +102,7 @@ private:
     // TAPE: Schreibweg mit Band-Charakter (tapeW), tapeF = dasselbe fuer die Leitung nur mit dem ersten Echo;
     // Umschalten blendet ueber tapeSm (beide Wege laufen nur waehrend der Ueberblendung)
     TapeStage tapeW, tapeF;
+    BbdChorus chorus;   // Chorus in der Schleife (Expert, Platz "In Loop")
     juce::SmoothedValue<float> tapeSm;
     bool tapeLive = false;
     bool initialised = false;
