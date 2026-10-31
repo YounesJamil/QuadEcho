@@ -7,14 +7,13 @@ namespace
 {
 constexpr int kSub = 16;
 
-inline double waveform (int wave, double t) { return lfoWaveD (wave, t); }
 } // namespace
 
 void DelayUnit::prepare (double sampleRate)
 {
     sr = sampleRate;
-    // 4 s + Modulation (max 40 ms) + Interpolationsreserve
-    capacity = (int) std::ceil (kMaxDelaySeconds * sr) + (int) std::ceil (0.05 * sr) + 16;
+    // 16 s + Modulation (LFO/ENV bis 100 ms, Phase-Modus bis 10 ms x Pegel) + Interpolationsreserve
+    capacity = (int) std::ceil (kMaxDelaySeconds * sr) + (int) std::ceil ((kMaxModSeconds + 0.03) * sr) + 16;
     for (auto& l : line) { l.dl.prepare (capacity); l.first.prepare (capacity); }
     capacity = line[0].dl.capacity();
 
@@ -32,6 +31,9 @@ void DelayUnit::prepare (double sampleRate)
 
     useOs = sr < 88200.0;   // ab 88,2 kHz landen die staerksten Spiegelfrequenzen ohnehin ueber dem Hoerbereich
     osLatency = useOs ? (double) Oversampler2x::kLatency : 0.0;
+    tapeW.prepare (sr, useOs);
+    tapeF.prepare (sr, useOs);
+    tapeSm.reset (sampleRate, 0.05);
     rpCoef  = 1.0 - std::exp (-1.0 / (0.2 * sr));
     qCoef   = 1.0f - std::exp (-(float) kSub / (0.03f * (float) sr));   // Resonanz, pro Teilblock
     modCoef = 1.0 - std::exp (-1.0 / (0.004 * sr));
@@ -64,7 +66,7 @@ void DelayUnit::clearSome (int samplesPerLine)
 void DelayUnit::resetState()
 {
     for (auto& l : line) { l.fading = false; l.init = false; }
-    hp.reset(); lp.reset(); hp1.reset(); lp1.reset(); peakHp.reset(); peakLp.reset();
+    hp.reset(); lp.reset(); hp1.reset(); lp1.reset(); peakHp.reset(); peakLp.reset(); peakBell.reset();
     lfoPos = 0.0; modSm[0] = modSm[1] = fModSm = 0.0; env = 0.0; envMapped = 0.0f;
     lastTransition = -1;
     stableComp = stableTarget = 1.0f;
@@ -73,6 +75,7 @@ void DelayUnit::resetState()
     for (auto& o : osF) o.reset();
     for (auto& d : rDelay) d.reset();
     for (auto& d : xDelay) d.reset();
+    tapeW.reset(); tapeF.reset(); tapeLive = false;
     xOsWarm = -1;
     framePos = 0;
     initialised = false;
@@ -135,7 +138,8 @@ float DelayUnit::readLine (Line& l, double modSamples, double target, int transi
 void DelayUnit::process (const float* inL, const float* inR, float* outL, float* outR,
                          int n, const EchoSettings& s, double bpm, float* wetOutL, float* wetOutR,
                          float* firstOutL, float* firstOutR,
-                         const float* origInL, const float* origInR, float* origOutL, float* origOutR)
+                         const float* origInL, const float* origInR, float* origOutL, float* origOutR,
+                         const float* phaseModL, const float* phaseModR)
 {
     const float fs = (float) sr;
     const int trans = std::min (std::max (s.transition, 0), 2);
@@ -146,21 +150,20 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
     }
 
     // ---- Zielwerte ----
-    const auto divBeats = [] (int i) { return divBeatsOf (i); };
     double msL, msR;
     delayTimesMs (s, bpm, msL, msR);
     const double target[2] = { msL * sr / 1000.0, msR * sr / 1000.0 };
 
-    const double lfoHz = s.lfoSync ? (bpm / 60.0) / divBeats (s.lfoDiv) : (double) s.rateHz;
+    const double lfoHz = s.lfoSync ? (bpm / 60.0) / divBeatsOf (s.lfoDiv) : (double) s.rateHz;
     if (s.lfoSync && songPpq >= 0.0)   // Phase an der Songposition ausrichten (im normalen Lauf stimmt sie schon)
     {
-        const double want = songPpq / divBeats (s.lfoDiv);
+        const double want = songPpq / divBeatsOf (s.lfoDiv);
         if (std::abs (want - lfoPos) > 1.0e-6) lfoPos = want;
     }
     const double lfoInc = lfoHz / sr;
     const double phaseOff = s.phaseDeg / 360.0;
     const double fPhaseOff = s.filterPhaseDeg / 360.0;
-    const double depthSamples = (double) s.delayDepth * 0.010 * (s.x4 ? 4.0 : 1.0) * sr;
+    const double depthSamples = (double) s.delayDepth * 0.010 * sr;
     const float fbSign = s.fbInvert ? -1.0f : 1.0f;
     const float driveAmt = std::min (std::max (s.inGainDb / 24.0f, 0.0f), 1.0f);   // Input-Gain ueber 0 dB saettigt analog
     const float qLpTarget = 0.7071f + s.res * s.res * 4.0f, qHpTarget = 0.7071f + s.hpRes * s.hpRes * 4.0f;
@@ -180,8 +183,10 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
         depthSm.setCurrentAndTargetValue (depthTarget);
         fDepthSm.setCurrentAndTargetValue (s.filterDepth);
         freezeSm.setCurrentAndTargetValue (frozen ? 1.0f : 0.0f);
+        tapeSm.setCurrentAndTargetValue (s.tape ? 1.0f : 0.0f);
         qSm[0] = qHpTarget; qSm[1] = qLpTarget;
         boostSm[0] = s.hpBoost; boostSm[1] = s.lpBoost;
+        bellSm = s.bellOn ? s.bellGain : 0.0f;
         initialised = true;
     }
     inGainSm.setTargetValue (dbToGain (s.inGainDb));
@@ -194,6 +199,7 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
     depthSm.setTargetValue (depthTarget);
     fDepthSm.setTargetValue (s.filterDepth);
     freezeSm.setTargetValue (frozen ? 1.0f : 0.0f);
+    tapeSm.setTargetValue (s.tape ? 1.0f : 0.0f);
 
     const bool needFirst = firstOutL != nullptr;
 
@@ -222,8 +228,12 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
         frameHpPeak = s.hpOn && boostSm[0] > kBoostOffDb;
         frameLpPeak = s.lpOn && boostSm[1] > kBoostOffDb;
         const bool hpPeak = frameHpPeak, lpPeak = frameLpPeak;
+        // Bell-Band: Gain geglaettet (Ein/Aus blendet ueber den Gain), Frequenz fest (folgt nicht der Modulation)
+        bellSm += ((s.bellOn ? s.bellGain : 0.0f) - bellSm) * qCoef;
+        frameBell = std::abs (bellSm) > kBoostOffDb;
+        if (frameBell) peakBell.set (sr, std::min (s.bellHz, 0.45f * fs), s.bellQ, bellSm); else peakBell.reset();
         {
-            const float modF = (float) std::min (std::max (fModSm, -1.0), 1.0);
+            const float modF = (float) std::min (std::max (fModSm, (double) -kMaxModFactor), (double) kMaxModFactor);
             const float fm = std::exp2 (modF * fDepthSm.getCurrentValue() * 2.0f);
             const float maxF = 0.45f * fs;
             if (s.hpOn)
@@ -244,14 +254,16 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
             // STABLE: Verstaerkung der Filterkette an ihrer Spitze ausgleichen, damit keine Frequenz pro Runde lauter
             // wird als das Feedback (ohne STABLE darf die Schleife an der Resonanz aufschaukeln)
             float compTarget = 1.0f;
-            if (s.stableFb && (s.hpOn || s.lpOn))
+            if (s.stableFb && (s.hpOn || s.lpOn || frameBell))
             {
                 const double hpFc = std::min (std::max ((double) s.hpHz * fm, 20.0), (double) maxF);
                 const double lpFc = std::min (std::max ((double) s.lpHz * fm, 100.0), (double) maxF);
-                const std::array<double, 7> key { { (s.hpOn ? 1.0 : 0.0) + (s.lpOn ? 2.0 : 0.0), hpFc, lpFc, qHp, qLp, boostSm[0], boostSm[1] } };
+                const std::array<double, 10> key { { (s.hpOn ? 1.0 : 0.0) + (s.lpOn ? 2.0 : 0.0), hpFc, lpFc, qHp, qLp, boostSm[0], boostSm[1],
+                                                      frameBell ? bellSm : 0.0, s.bellHz, s.bellQ } };
                 if (key != stableKey)
                 {
-                    const LoopFilterSpec spec (sr, s.hpOn, hpFc, qHp, boostSm[0], s.lpOn, lpFc, qLp, boostSm[1]);
+                    const LoopFilterSpec spec (sr, s.hpOn, hpFc, qHp, boostSm[0], s.lpOn, lpFc, qLp, boostSm[1],
+                                               frameBell ? bellSm : 0.0f, std::min ((double) s.bellHz, (double) maxF), s.bellQ);
                     stableTarget = (float) (1.0 / std::max (1.0, spec.peakFast()));
                     stableKey = key;
                 }
@@ -264,7 +276,7 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
         }
         }
         const SatCoefs& sat = frameSat;
-        const bool hpOn = frameHpOn, lpOn = frameLpOn, hpPeak = frameHpPeak, lpPeak = frameLpPeak;
+        const bool hpOn = frameHpOn, lpOn = frameLpOn, hpPeak = frameHpPeak, lpPeak = frameLpPeak, bell = frameBell;
 
         for (int j = 0; j < len; ++j)
         {
@@ -276,9 +288,9 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
 
             // LFO (gemeinsame Phase, R mit Offset)
             // LFO aus: nichts berechnen (0 * Welle ergibt ohnehin 0)
-            const double lfo0 = s.lfoOn ? waveform (s.wave, lfoPos) : 0.0;
-            const double lfo1 = s.lfoOn ? waveform (s.wave, lfoPos + phaseOff) : 0.0;
-            const double lfoF = s.lfoOn ? waveform (s.wave, lfoPos + fPhaseOff) : 0.0;
+            const double lfo0 = s.lfoOn ? modWaveD (s, lfoPos) : 0.0;
+            const double lfo1 = s.lfoOn ? modWaveD (s, lfoPos + phaseOff) : 0.0;
+            const double lfoF = s.lfoOn ? modWaveD (s, lfoPos + fPhaseOff) : 0.0;
             if (j == 0 && framePos == 0)
             {
                 lfoPub.store ((float) (0.5 * (lfo0 + lfo1)), std::memory_order_relaxed);
@@ -286,10 +298,10 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
                 rateHzPub.store ((float) lfoHz, std::memory_order_relaxed);
             }
             lfoPos += lfoInc;
-            const double em = s.envMix, envPart = (double) envMapped * em;
-            const double m0 = lfo0 * (1.0 - em) + envPart;
-            const double m1 = lfo1 * (1.0 - em) + envPart;
-            const double mF = lfoF * (1.0 - em) + envPart;
+            const double em = s.envMix, envPart = (double) envMapped * em * (double) s.envAmt, lfoPart = (1.0 - em) * (double) s.lfoAmt;
+            const double m0 = lfo0 * lfoPart + envPart;
+            const double m1 = lfo1 * lfoPart + envPart;
+            const double mF = lfoF * lfoPart + envPart;
             fModSm += (mF - fModSm) * modCoef;
             modSm[0] += (m0 - modSm[0]) * modCoef;
             modSm[1] += (m1 - modSm[1]) * modCoef;
@@ -310,8 +322,10 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
             else                      { x0 = l * inG; x1 = r * inG; }
 
             float fe0 = 0.0f, fe1 = 0.0f;
-            const float y0 = readLine (line[0], modSm[0] * depthNow, target[0], trans, fe0, needFirst, frozen);
-            const float y1 = readLine (line[1], modSm[1] * depthNow, target[1], trans, fe1, needFirst, frozen);
+            double pm0 = 0.0, pm1 = 0.0;   // Phase-Modus: Lesestelle folgt dem Signal der Quelleinheit (im Freeze nicht)
+            if (phaseModL != nullptr) { const double k = 0.001 * sr * (1.0 - (double) fz); pm0 = phaseModL[i] * k; pm1 = phaseModR[i] * k; }
+            const float y0 = readLine (line[0], modSm[0] * depthNow + pm0, target[0], trans, fe0, needFirst, frozen);
+            const float y1 = readLine (line[1], modSm[1] * depthNow + pm1, target[1], trans, fe1, needFirst, frozen);
 
             // Feedbackpfad: Filter -> Soft-Saturation; Freeze blendet auf den unveraenderten Loop mit Feedback 1
             const float r0 = (mode == PingPong) ? y1 : y0;
@@ -321,7 +335,9 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
             if (lpOn) { f0 = lp1.processSample (0, lp.processSample (0, f0)); f1 = lp1.processSample (1, lp.processSample (1, f1)); }
             if (hpPeak) { f0 = peakHp.process (0, f0); f1 = peakHp.process (1, f1); }
             if (lpPeak) { f0 = peakLp.process (0, f0); f1 = peakLp.process (1, f1); }
+            if (bell) { f0 = peakBell.process (0, f0); f1 = peakBell.process (1, f1); }
             if (stableComp != 1.0f) { f0 *= stableComp; f1 *= stableComp; }
+            const float xt0 = x0, xt1 = x1, ft0 = f0, ft1 = f1;   // TAPE: Eingang und Feedback vor den Saettigungen von Clean
             float rr0 = r0, rr1 = r1;   // unveraenderter Loop fuer Freeze, zeitlich passend zu den Saettigungspfaden
             if (useOs)
             {
@@ -377,6 +393,22 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
                 fbNow += (fbSign - fb) * fz;
             }
             float w0 = x0 + fbNow * f0, w1 = x1 + fbNow * f1;
+            // TAPE: Eingang plus Feedback gemeinsam aufs Band (gleiche Verzoegerung wie Clean); Freeze haelt den Loop ohne Band
+            const float tm = tapeSm.getNextValue();
+            if (tm > 0.0f)
+            {
+                tapeLive = true;
+                const float t0 = tapeW.process (0, xt0 * (1.0f - fz) + fb * ft0), t1 = tapeW.process (1, xt1 * (1.0f - fz) + fb * ft1);
+                w0 += (t0 + (rr0 - t0) * fz - w0) * tm;
+                w1 += (t1 + (rr1 - t1) * fz - w1) * tm;
+                if (needFirst)
+                {
+                    const float u0 = tapeF.process (0, xt0 * (1.0f - fz)), u1 = tapeF.process (1, xt1 * (1.0f - fz));
+                    x0 += (u0 - x0) * tm;
+                    x1 += (u1 - x1) * tm;
+                }
+            }
+            else if (tapeLive) { tapeW.reset(); tapeF.reset(); tapeLive = false; }
             if (std::abs (w0) < 1e-18f) w0 = 0.0f;
             if (std::abs (w1) < 1e-18f) w1 = 0.0f;
             if (! std::isfinite (w0) || ! std::isfinite (w1)) { w0 = w1 = 0.0f; poisoned = true; }   // Schleife nie vergiften

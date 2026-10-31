@@ -210,7 +210,7 @@ void testFuzz()
                 c.hpHz = rf (20, 8000); c.lpHz = rf (200, 20000); c.res = rf (0, 1); c.hpRes = rf (0, 1); c.hpBoost = rf (0, 18); c.lpBoost = rf (0, 18); c.offsetL = rf (-50, 50);
                 c.transition = ri (3); c.mix = rf (0, 1); c.outDb = rf (-24, 12); c.width = rf (0, 2);
                 c.wave = ri (kNumWaves); c.lfoOn = ri (4) != 0; c.filterPhaseDeg = rf (0, 360); c.rateHz = rf (0.01f, 20); c.lfoSync = ri (2); c.lfoDiv = ri (17);
-                c.phaseDeg = rf (0, 360); c.x4 = ri (2); c.delayDepth = rf (0, 1); c.filterDepth = rf (0, 1); c.envMix = rf (0, 1);
+                c.phaseDeg = rf (0, 360); c.lfoAmt = rf (kMinModFactor, kMaxModFactor); c.envAmt = rf (kMinModFactor, kMaxModFactor); c.delayDepth = rf (0, 1); c.filterDepth = rf (0, 1); c.envMix = rf (0, 1);
                 c.freeze = ri (4) == 0;
                 s.pos[(size_t) u] = { rf (-1, 1), rf (-1, 1), rf (-1, 1) };
             }
@@ -229,7 +229,7 @@ void testFuzz()
                 d.on = ri (2); d.thresholdDb = rf (-60, 0); d.amountDb = rf (0, 40); d.attackMs = rf (0.1f, 200); d.releaseMs = rf (20, 3000);
             }
             s.algorithm = ri (kNumAlgorithms); s.globalMix = rf (0, 1); s.globalOutDb = rf (-24, 12);
-            s.distanceDelay = ri (2); s.earlyReflections = ri (2); s.binaural = ri (2); s.doppler = rf (0, 2); s.feedbackScale = rf (0, 1); s.softLimiter = ri (2);
+            s.distanceDelay = ri (2); s.earlyReflections = ri (2); s.binaural = ri (2); s.doppler = rf (0, 2); s.feedbackScale = rf (0, 2); s.softLimiter = ri (2);
             auto in = noise ((size_t) blocks[ri (6)], 0.5f, iter);
             auto out = runEngine (e, s, in, blocks[ri (6)], rf (30, 300));
             if (! finite (out, 1000.0f)) { ok = false; check (false, "NaN/Inf/Explosion in Fuzz-Iteration " + std::to_string (iter)); }
@@ -340,12 +340,21 @@ void testSpatial()
     const size_t a = (size_t) (0.5 * sr), b = (size_t) sr;
 
     // Entfernung: bis zum 2. Ring (Radius 2/3) praesent, hoechstens -3 dB; aeusserer Ring -12 dB
-    const float l1 = rms (spatialRun ({ 0, 0.0f, 0 }, tone).l, a, b);
-    const float lHalf = rms (spatialRun ({ 0, 0.5f, 0 }, tone).l, a, b);
-    const float lNear = rms (spatialRun ({ 0, 2.0f / 3.0f, 0 }, tone).l, a, b);
-    const float l4 = rms (spatialRun ({ 0, 1.0f, 0 }, tone).l, a, b);
+    const float l1 = rms (spatialRun ({ 0, 0.0f, 0 }, tone, false, false, true).l, a, b);
+    const float lHalf = rms (spatialRun ({ 0, 0.5f, 0 }, tone, false, false, true).l, a, b);
+    const float lNear = rms (spatialRun ({ 0, 2.0f / 3.0f, 0 }, tone, false, false, true).l, a, b);
+    const float l4 = rms (spatialRun ({ 0, 1.0f, 0 }, tone, false, false, true).l, a, b);
     check (toDb (lHalf / l1) > -3.0f && toDb (lNear / l1) > -3.6f, "Bis zum 2. Ring hoechstens ca. -3 dB (Radius 0.5: " + std::to_string (toDb (lHalf / l1)) + ", 2/3: " + std::to_string (toDb (lNear / l1)) + ")");
     check (std::abs (toDb (l4 / l1) + 12.0f) < 0.8f, "Aeusserer Ring (4 m): -12 dB (ist " + std::to_string (toDb (l4 / l1)) + ")");
+
+    // Stereo-Buehne: Y = +1 Buehnenkante (nah), 0 Mitte (ca. -1,8 dB), -1 Rueckwand (-9 dB); X aendert den Pegel nicht
+    {
+        const float front = rms (spatialRun ({ 0, 1.0f, 0 }, tone).l, a, b), mid = rms (spatialRun ({ 0, 0.0f, 0 }, tone).l, a, b);
+        const float back = rms (spatialRun ({ 0, -1.0f, 0 }, tone).l, a, b);
+        auto both = [&] (float x) { const auto o = spatialRun ({ x, 1.0f, 0 }, tone); return rms (o.l, a, b) * rms (o.l, a, b) + rms (o.r, a, b) * rms (o.r, a, b); };
+        check (std::abs (toDb (mid / front) + 1.8f) < 0.6f && std::abs (toDb (back / front) + 9.0f) < 1.0f && std::abs (both (0.9f) / both (0.0f) - 1.0f) < 0.15f,
+               "Buehne: vorne 0, Mitte " + std::to_string (toDb (mid / front)) + " dB, hinten " + std::to_string (toDb (back / front)) + " dB, X ohne Pegelverlust");
+    }
 
     // X: Equal-Power-Panning
     {
@@ -356,9 +365,7 @@ void testSpatial()
         const float pc = rms (mid.l, a, b) * rms (mid.l, a, b) + rms (mid.r, a, b) * rms (mid.r, a, b);
         const float ps = rms (spatialRun ({ -0.5f, 0.0f, 0 }, tone).l, a, b);
         const float ps2 = rms (spatialRun ({ -0.5f, 0.0f, 0 }, tone).r, a, b);
-        const float dHalf = 1.0f + 0.41421356f * 0.75f;                 // Distanz bei Radius 0.5 (Nahbereich bis 2/3: 1 .. 1.414 m)
-        const float d2 = dHalf * dHalf;
-        check (std::abs ((ps * ps + ps2 * ps2) * d2 / pc - 1.0f) < 0.15f, "Equal-Power: Gesamtleistung beim Pan konstant (nach Distanzkorrektur)");
+        check (std::abs ((ps * ps + ps2 * ps2) / pc - 1.0f) < 0.15f, "Equal-Power: Gesamtleistung beim Pan konstant");
     }
 
     // ITD: x=0.5 -> linkes Ohr etwa 0.5*0.6 ms spaeter
@@ -373,9 +380,12 @@ void testSpatial()
         const auto nz = noise ((size_t) (2 * sr), 0.4f, 7);
         auto hf = [&] (const std::vector<float>& v) { double e = 0; for (size_t i = a + 1; i < v.size(); ++i) { const double d = (double) v[i] - v[i - 1]; e += d * d; } return e; };
         auto tot = [&] (const std::vector<float>& v) { double e = 0; for (size_t i = a; i < v.size(); ++i) e += (double) v[i] * v[i]; return e; };
-        auto nearO = spatialRun ({ 0, 0.0f, 0 }, nz), farO = spatialRun ({ 0, 1.0f, 0 }, nz);
+        auto nearO = spatialRun ({ 0, 0.0f, 0 }, nz, false, false, true), farO = spatialRun ({ 0, 1.0f, 0 }, nz, false, false, true);
         const double rn = hf (nearO.l) / tot (nearO.l), rf = hf (farO.l) / tot (farO.l);
         check (rf < rn * 0.6, "Luftabsorption: weit entfernt dunkler (" + std::to_string (rf / rn) + ")");
+        auto frontO = spatialRun ({ 0, 1.0f, 0 }, nz), backO = spatialRun ({ 0, -1.0f, 0 }, nz);
+        const double rFront = hf (frontO.l) / tot (frontO.l), rBack = hf (backO.l) / tot (backO.l);
+        check (rBack < rFront * 0.85, "Buehne: hinten dunkler (" + std::to_string (rBack / rFront) + ")");
     }
 
     // Stereobreite sinkt mit Distanz
@@ -384,7 +394,7 @@ void testSpatial()
         for (size_t i = 0; i < wide.l.size(); ++i) { wide.l[i] = 0.4f * std::sin (6.2831853f * 500.0f * (float) i / (float) sr); wide.r[i] = -wide.l[i]; }
         auto sideE = [&] (const Sig& s) { double e = 0; for (size_t i = a; i < s.l.size(); ++i) { const double d = 0.5 * ((double) s.l[i] - s.r[i]); e += d * d; } return e; };
         auto midE  = [&] (const Sig& s) { double e = 0; for (size_t i = a; i < s.l.size(); ++i) { const double d = 0.5 * ((double) s.l[i] + s.r[i]); e += d * d; } return e; };
-        auto nearO = spatialRun ({ 0, 0.0f, 0 }, wide), farO = spatialRun ({ 0, 1.0f, 0 }, wide);
+        auto nearO = spatialRun ({ 0, 1.0f, 0 }, wide), farO = spatialRun ({ 0, -1.0f, 0 }, wide);
         (void) midE;
         check (sideE (farO) < sideE (nearO) * 0.2, "Stereobreite nimmt mit Distanz ab");
     }
@@ -403,12 +413,12 @@ void testSpatial()
 
     // Frueh-Reflexionen nur bei Distanz hoerbar, Laufzeit abschaltbar
     {
-        auto o = spatialRun ({ 0, 1.0f, 0 }, impulse ((size_t) (0.1 * sr)), false, true);
+        auto o = spatialRun ({ 0, -1.0f, 0 }, impulse ((size_t) (0.1 * sr)), false, true);
         check (peakAbs (o.l, 100, 2000) > 0.0005f, "Fruehe Reflexionen vorhanden");
-        auto od = spatialRun ({ 0, 1.0f, 0 }, impulse ((size_t) (0.2 * sr)), true, false);
+        auto od = spatialRun ({ 0, -1.0f, 0 }, impulse ((size_t) (0.2 * sr)), true, false);
         const size_t pk = argMaxAbs (od.l);
         check (pk > (size_t) (0.008 * sr), "Distanz-Laufzeit aktiv: Peak bei " + std::to_string (pk));
-        auto on = spatialRun ({ 0, 1.0f, 0 }, impulse ((size_t) (0.2 * sr)), false, false);
+        auto on = spatialRun ({ 0, -1.0f, 0 }, impulse ((size_t) (0.2 * sr)), false, false);
         check (argMaxAbs (on.l) < 5, "Distanz-Laufzeit aus: keine Verzoegerung");
     }
 
@@ -459,10 +469,23 @@ void testModulation()
         auto s = wetOnly(); s.timeL = 100.0f; s.delayDepth = 1.0f; s.rateHz = 1.0f; s.wave = SawUp; s.phaseDeg = 0.0f;
         auto out = runUnit (u, s, impulse ((size_t) (1 * sr), 2000), 256);
         check (argMaxAbs (out.l) != 2000 + 4800, "Delay-Modulation verschiebt Echo");
-        // x4-Schalter vergroessert die Verschiebung
-        DelayUnit u2; u2.prepare (sr); s.x4 = true;
+        // LFO-Faktor 4 vergroessert die Verschiebung
+        DelayUnit u2; u2.prepare (sr); s.lfoAmt = 4.0f;
         auto out4 = runUnit (u2, s, impulse ((size_t) (1 * sr), 2000), 256);
-        check (std::abs ((long) argMaxAbs (out4.l) - 6800) > std::abs ((long) argMaxAbs (out.l) - 6800), "x4 vergroessert die Modulation");
+        check (std::abs ((long) argMaxAbs (out4.l) - 6800) > std::abs ((long) argMaxAbs (out.l) - 6800), "LFO-Faktor vergroessert die Modulation");
+    }
+    {
+        // ENV-Faktor wirkt nur auf den Huellkurven-Anteil: ohne Envelope Mix bitgenau gleich, mit Envelope Mix anders
+        auto run = [&] (float envMix, float envAmt)
+        {
+            DelayUnit u; u.prepare (sr);
+            auto s = wetOnly(); s.timeL = 100.0f; s.delayDepth = 0.5f; s.lfoOn = false; s.envMix = envMix; s.envAmt = envAmt;
+            return runUnit (u, s, sine ((size_t) sr, sr, 440.0, 0.5f), 256);
+        };
+        const auto a0 = run (0.0f, 1.0f), b0 = run (0.0f, 4.0f), a1 = run (1.0f, 1.0f), b1 = run (1.0f, 4.0f);
+        float d0 = 0.0f, d1 = 0.0f;
+        for (size_t i = 0; i < a0.l.size(); ++i) { d0 = std::max (d0, std::abs (a0.l[i] - b0.l[i])); d1 = std::max (d1, std::abs (a1.l[i] - b1.l[i])); }
+        check (d0 == 0.0f && d1 > 0.01f, "ENV-Faktor wirkt nur mit Envelope Mix");
     }
     {
         // Phase-Offset: L/R unterschiedlich
@@ -759,7 +782,7 @@ void testNewFeatures()
         const auto ln = run (left, silence);
         check (rms (ln.l, a, b) > rms (ln.r, a, b) * 5.0f, "Noise an Position links: Signal links");
 
-        auto narrow = ns; narrow.width = 0.0f;
+        auto narrow = ns; narrow.width = 0.0f; narrow.pos = { 0.0f, 1.0f, 0.0f };
         const auto nw = run (narrow, silence);
         double dsum = 0, ssum = 0;
         for (size_t i = a; i < b; ++i) { dsum += std::abs (nw.l[i] - nw.r[i]); ssum += std::abs (nw.l[i]) + std::abs (nw.r[i]); }
@@ -769,7 +792,7 @@ void testNewFeatures()
         {
             auto corr = [&] (float width)
             {
-                auto nw2 = ns; nw2.width = width; nw2.pos = { 0.0f, 0.0f, 0.0f };
+                auto nw2 = ns; nw2.width = width; nw2.pos = { 0.0f, 1.0f, 0.0f };
                 const auto o = run (nw2, silence);
                 double lr = 0, ll = 0, rr = 0;
                 for (size_t i = a; i < b; ++i) { lr += (double) o.l[i] * o.r[i]; ll += (double) o.l[i] * o.l[i]; rr += (double) o.r[i] * o.r[i]; }
@@ -872,7 +895,7 @@ void testNewFeatures()
             {
                 // vom 2. Ring zum aeusseren Ring (1,4 m -> 4 m): dort wirkt die Entfernung
                 const float y = 2.0f / 3.0f + std::min (1.0f, (float) pos / (float) (0.7 * sr)) / 3.0f;
-                SpatialOptions so; so.distanceDelay = true; so.doppler = doppler;
+                SpatialOptions so; so.distanceDelay = true; so.doppler = doppler; so.binaural = true;
                 sp.process (out.l.data() + pos, out.r.data() + pos, (int) std::min<size_t> (128, len - pos), { 0.0f, y, 0.0f }, so);
             }
             const size_t from = (size_t) (0.15 * sr), to = (size_t) (0.55 * sr);
@@ -1108,7 +1131,7 @@ void testPlacement()
 }
 
 // ---------------------------------------------------------------------------
-// Regressionstests zu den Befunden in AUDIT.md (je Befund ein Abschnitt)
+// Regressionstests zu den Befunden des DSP-Audits (je Befund ein Abschnitt)
 void testAuditFixes()
 {
     std::cout << "[Audit-Befunde]" << std::endl;
@@ -1458,6 +1481,200 @@ void testAuditFixes()
                && v6.getIntAttribute (kStateVersionAttr) == kStateVersion,
                "Umrechnung 6 -> 7: 4/1 -> 4, 1/1 punktiert bleibt 1/2., 2/1 -> 2 (" + std::to_string (val ("a_divL")) + ", "
                + std::to_string (val ("b_divL")) + ", " + std::to_string (val ("c_lfoDiv")) + ", " + std::to_string (val ("gf_div")) + ")");
+    }
+
+    // Umrechnung 7 -> 8: x4 an wird LFO- und ENV-Faktor 4, die Filter-Tiefe geviertelt (Filter klang ohne x4); x4 entfaellt
+    {
+        juce::XmlElement v7 ("STATE");
+        v7.setAttribute (kStateVersionAttr, 7);
+        auto add = [&v7] (const char* id, double v) { auto* e = v7.createNewChildElement ("PARAM"); e->setAttribute ("id", id); e->setAttribute ("value", v); };
+        add ("a_x4", 1.0); add ("a_fDepth", 0.8);
+        add ("b_x4", 0.0); add ("b_fDepth", 0.6);
+        migrateState (v7);
+        auto val = [&v7] (const char* id) { auto* e = v7.getChildByAttribute ("id", id); return e != nullptr ? e->getDoubleAttribute ("value") : -1.0; };
+        check (val ("a_lfoAmt") == 4.0 && val ("a_envAmt") == 4.0 && std::abs (val ("a_fDepth") - 0.2) < 1e-9
+               && val ("b_lfoAmt") < 0.0 && val ("b_fDepth") == 0.6 && val ("a_x4") < 0.0 && val ("b_x4") < 0.0
+               && v7.getIntAttribute (kStateVersionAttr) == kStateVersion,
+               "Umrechnung 7 -> 8: x4 -> Faktor 4, Filter-Tiefe / 4, x4 entfaellt");
+    }
+
+    // Huellkurve des globalen Filters: lautes Spiel oeffnet den LP (mehr Hoehen), ohne Envelope Mix bitgenau wie bisher
+    {
+        auto run = [&] (float envMix, float depth)
+        {
+            GlobalFilter gf; gf.prepare (sr);
+            GlobalFilterSettings g; g.lpOn = true; g.lpHz = 1000.0f; g.lfoOn = false; g.depth = depth; g.envMix = envMix;
+            auto in = sine ((size_t) sr, sr, 5000.0, 0.5f), out = in;
+            for (size_t pos = 0; pos < in.l.size(); pos += 256)
+            {
+                const int n = (int) std::min<size_t> (256, in.l.size() - pos);
+                gf.beginChunk (g, 120.0, n, -1.0, in.l.data() + pos, in.r.data() + pos);
+                gf.process (0, out.l.data() + pos, out.r.data() + pos, n);
+            }
+            return rms (out.l, (size_t) (0.5 * sr), out.l.size());
+        };
+        check (run (1.0f, 1.0f) > 2.0f * run (0.0f, 1.0f) && run (1.0f, 0.0f) == run (0.0f, 0.0f),
+               "Globaler Filter: Huellkurve oeffnet den LP, ohne Tiefe keine Wirkung");
+    }
+
+    // Auto-Pan der Noise: Sinus 1 Hz, Amount 100 %: in der ersten Halbperiode rechts, in der zweiten links
+    {
+        NoiseSource ns; ns.prepare (sr);
+        NoiseSettings n; n.on = true; n.level = 1.0f; n.panAmt = 1.0f; n.panRateHz = 1.0f;
+        const auto in = makeSig ((size_t) sr);
+        auto out = makeSig ((size_t) sr);
+        for (size_t pos = 0; pos < out.l.size(); pos += 256)
+        {
+            const int len = (int) std::min<size_t> (256, out.l.size() - pos);
+            ns.process (out.l.data() + pos, out.r.data() + pos, len, n, 120.0, in.l.data() + pos, in.r.data() + pos);
+        }
+        const size_t q = (size_t) (0.25 * sr), w = (size_t) (0.05 * sr);
+        check (rms (out.r, q - w, q + w) > 4.0f * rms (out.l, q - w, q + w) && rms (out.l, 3 * q - w, 3 * q + w) > 4.0f * rms (out.r, 3 * q - w, 3 * q + w),
+               "Noise Auto-Pan: wandert von rechts nach links");
+    }
+
+    // TAPE: erstes Echo an derselben Stelle wie Clean, Wiederholungen dunkler, Schleife bleibt begrenzt, Freeze haelt
+    for (double fs : { 48000.0, 96000.0 })   // mit und ohne Oversampling
+    {
+        auto echoAt = [&] (bool tape)
+        {
+            DelayUnit u; u.prepare (fs);
+            auto s = wetOnly(); s.timeL = s.timeR = 50.0f; s.tape = tape;
+            return argMaxAbs (runUnit (u, s, impulse ((size_t) (0.2 * fs), 100), 256).l);
+        };
+        check (echoAt (true) == echoAt (false), "TAPE: erstes Echo an derselben Stelle wie Clean (" + std::to_string ((int) fs) + " Hz)");
+    }
+    {
+        // Rauschstoss, Feedback 70 %: Anteil der Hoehen (Differenzsignal) in der 4. Wiederholung, Tape gegen Clean
+        auto hfRatio = [&] (bool tape)
+        {
+            DelayUnit u; u.prepare (sr);
+            auto s = wetOnly(); s.timeL = s.timeR = 100.0f; s.feedback = 0.7f; s.tape = tape;
+            auto in = noise ((size_t) sr, 0.3f, 7);
+            for (size_t i = (size_t) (0.05 * sr); i < in.l.size(); ++i) in.l[i] = in.r[i] = 0.0f;
+            const auto out = runUnit (u, s, in, 256);
+            const size_t a0 = (size_t) (0.4 * sr), a1 = (size_t) (0.45 * sr);
+            std::vector<float> d (out.l.size(), 0.0f);
+            for (size_t i = 1; i < d.size(); ++i) d[i] = out.l[i] - out.l[i - 1];
+            return rms (d, a0, a1) / std::max (rms (out.l, a0, a1), 1e-9f);
+        };
+        check (hfRatio (true) < 0.8f * hfRatio (false), "TAPE: Wiederholungen werden dunkler (" + std::to_string (hfRatio (true)) + " / " + std::to_string (hfRatio (false)) + ")");
+
+        // Feedback 110 %, lauter Eingang: bleibt begrenzt und endlich
+        DelayUnit u; u.prepare (sr);
+        auto s = wetOnly(); s.timeL = s.timeR = 30.0f; s.feedback = 1.1f; s.tape = true; s.inGainDb = 12.0f;
+        const auto out = runUnit (u, s, sine ((size_t) (3 * sr), sr, 220.0, 0.9f), 256);
+        check (finite (out, 3.0f) && peakAbs (out.l, (size_t) (2 * sr)) < 2.0f, "TAPE: Schleife mit Feedback 110 % bleibt begrenzt");
+    }
+    {
+        // Freeze mit Tape: Pegel bleibt (ohne Band im gehaltenen Loop)
+        DelayUnit u; u.prepare (sr);
+        auto s = wetOnly(); s.timeL = s.timeR = 120.0f; s.feedback = 0.6f; s.tape = true;
+        auto in = noise ((size_t) (3 * sr), 0.3f, 3);
+        for (size_t i = (size_t) (0.1 * sr); i < in.l.size(); ++i) in.l[i] = in.r[i] = 0.0f;
+        auto out = in;
+        for (size_t pos = 0; pos < in.l.size(); pos += 256)
+        {
+            s.freeze = pos >= (size_t) (0.15 * sr);
+            const int n = (int) std::min<size_t> (256, in.l.size() - pos);
+            u.process (in.l.data() + pos, in.r.data() + pos, out.l.data() + pos, out.r.data() + pos, n, s, 120.0);
+        }
+        const float early = rms (out.l, (size_t) (0.5 * sr), (size_t) (0.8 * sr)), late = rms (out.l, (size_t) (2.5 * sr), (size_t) (2.8 * sr));
+        check (early > 1e-3f && std::abs (toDb (late) - toDb (early)) < 1.0f, "TAPE: Freeze haelt den Pegel (" + std::to_string (toDb (early)) + " / " + std::to_string (toDb (late)) + " dB)");
+    }
+
+    // Routing-Modus (Dual Chain A > B, C/D aus, nur Echos): Audio = B echot auch das Echo von A (150 ms);
+    // Phase = B bekommt den Eingang, A bewegt nur die Lesestelle (kein Echo bei 150 ms); A aus: Phase bitgenau wie Audio,
+    // Phase + Dry moduliert dann mit dem Original
+    {
+        auto run = [&] (int route, bool aOn, const Sig& in)
+        {
+            EngineSettings s;
+            s.algorithm = 1; s.routeMode = route; s.routeDepth = 0.5f;
+            s.globalMix = 1.0f; s.softLimiter = false; s.earlyReflections = false;
+            for (auto& e : s.echo) { e.feedback = 0.0f; e.mix = 1.0f; }
+            s.echo[0].on = aOn; s.echo[0].timeL = 100.0f;
+            s.echo[1].timeL = 50.0f;
+            s.echo[2].on = s.echo[3].on = false;
+            auto e = std::make_unique<QuadEngine>(); e->prepare (sr);
+            return runEngine (*e, s, in, 256);
+        };
+        const auto imp = impulse ((size_t) (0.4 * sr), 100);
+        auto around = [&] (const Sig& o, double ms) { const size_t c = 100 + (size_t) (ms * 0.001 * sr), w = (size_t) (0.004 * sr); return rms (o.l, c - w, c + w); };
+        const auto audio = run (RouteAudio, true, imp), phase = run (RoutePhase, true, imp);
+        check (around (audio, 150.0) > 0.01f && around (phase, 150.0) < 1.0e-4f && around (phase, 50.0) > 0.01f,
+               "Routing Phase: B echot den Eingang, nicht das Echo von A");
+        const auto sn = sine ((size_t) (0.5 * sr), sr, 1000.0, 0.5f);
+        const auto aAudio = run (RouteAudio, false, sn), aPhase = run (RoutePhase, false, sn), aDry = run (RoutePhaseDry, false, sn);
+        float dPhase = 0.0f, dDry = 0.0f;
+        for (size_t i = 0; i < sn.l.size(); ++i) { dPhase = std::max (dPhase, std::abs (aAudio.l[i] - aPhase.l[i])); dDry = std::max (dDry, std::abs (aAudio.l[i] - aDry.l[i])); }
+        check (dPhase == 0.0f && dDry > 0.01f, "Routing: A aus -> Phase wie Audio, Phase + Dry moduliert mit dem Original");
+    }
+
+    // Bell-Band: in der Schleife hebt es die Wiederholungen bei seiner Frequenz an; STABLE und Tail kennen es;
+    // im globalen Filter wirkt es nur um seine Frequenz
+    {
+        auto wetRms = [&] (bool bellOn, float hz)
+        {
+            DelayUnit u; u.prepare (sr);
+            auto s = wetOnly(); s.timeL = s.timeR = 50.0f; s.feedback = 0.5f;
+            s.bellOn = bellOn; s.bellHz = 1000.0f; s.bellGain = 9.0f; s.bellQ = 1.0f;
+            const auto out = runUnit (u, s, sine ((size_t) sr, sr, hz, 0.1f), 256);
+            return rms (out.l, (size_t) (0.5 * sr), out.l.size());
+        };
+        check (toDb (wetRms (true, 1000.0) / wetRms (false, 1000.0)) > 3.0f && std::abs (toDb (wetRms (true, 100.0) / wetRms (false, 100.0))) < 1.0f,
+               "Bell-Band in der Schleife: 1 kHz lauter, 100 Hz unveraendert");
+
+        EchoSettings c; c.bellOn = true; c.bellHz = 1000.0f; c.bellGain = 12.0f; c.bellQ = 2.0f; c.feedback = 0.5f;
+        const auto spec = loopFilterOf (c, sr);
+        EngineSettings es; es.echo[0] = c; for (int u = 1; u < 4; ++u) es.echo[(size_t) u].on = false;
+        auto esStable = es; esStable.echo[0].stableFb = true;
+        check (std::abs (toDb ((float) spec.peakOnGrid()) - 12.0f) < 0.5f && toDb ((float) spec.peakFast()) > toDb ((float) spec.peakOnGrid()) - 0.3f
+               && std::isinf (tailSeconds (es, 120.0, sr)) && std::isfinite (tailSeconds (esStable, 120.0, sr)),
+               "Bell-Band: Spitze +12 dB (Raster und schnelle Suche), Tail ohne STABLE unendlich, mit endlich");
+
+        auto gfRms = [&] (double hz)
+        {
+            GlobalFilter gf; gf.prepare (sr);
+            GlobalFilterSettings g; g.bellOn = true; g.bellHz = 1000.0f; g.bellGain = -12.0f; g.bellQ = 1.0f; g.lfoOn = false;
+            auto in = sine ((size_t) sr, sr, hz, 0.5f), out = in;
+            for (size_t pos = 0; pos < in.l.size(); pos += 256)
+            {
+                const int n = (int) std::min<size_t> (256, in.l.size() - pos);
+                gf.beginChunk (g, 120.0, n, -1.0, in.l.data() + pos, in.r.data() + pos);
+                gf.process (0, out.l.data() + pos, out.r.data() + pos, n);
+            }
+            return toDb (rms (out.l, (size_t) (0.5 * sr), out.l.size()) / rms (in.l, (size_t) (0.5 * sr), in.l.size()));
+        };
+        check (std::abs (gfRms (1000.0) + 12.0f) < 0.5f && std::abs (gfRms (100.0)) < 0.5f, "Globaler Filter: Bell-Band -12 dB bei 1 kHz, 100 Hz unveraendert");
+    }
+
+    // Schritt-Muster: Treppe von -1 nach +1, Random fest je Seed, Glide ohne Spruenge, wirkt auf die Delay-Zeit
+    {
+        EchoSettings e; e.pattern = PatStairs; e.steps = 8;
+        check (modWaveD (e, 0.01) == -1.0 && modWaveD (e, 0.99) == 1.0 && modWaveD (e, 1.01) == -1.0, "Pattern Treppe: -1 .. +1 je Zyklus");
+        EchoSettings r1; r1.pattern = PatRandom; r1.seed = 7;
+        auto r2 = r1; auto r3 = r1; r3.seed = 8;
+        bool same = true, differs = false;
+        for (int k = 0; k < 16; ++k)
+        {
+            const double t = (k + 0.5) / 16.0;
+            same = same && modWaveD (r1, t) == modWaveD (r2, t);
+            differs = differs || modWaveD (r1, t) != modWaveD (r3, t);
+        }
+        check (same && differs, "Pattern Random: gleicher Seed gleiches Muster, anderer Seed anderes");
+        auto g = e; g.pattern = PatZigzag; g.glide = 1.0f;
+        double maxStep = 0.0;
+        for (int i = 1; i <= 20000; ++i) maxStep = std::max (maxStep, std::abs (modWaveD (g, i / 10000.0) - modWaveD (g, (i - 1) / 10000.0)));
+        check (maxStep < 0.01, "Pattern Glide 100 %: keine Spruenge (" + std::to_string (maxStep) + ")");
+
+        auto echoAt = [&] (int pattern)
+        {
+            DelayUnit u; u.prepare (sr);
+            auto s = wetOnly(); s.timeL = s.timeR = 100.0f; s.delayDepth = 1.0f; s.rateHz = 1.0f; s.pattern = pattern; s.steps = 8;
+            return argMaxAbs (runUnit (u, s, impulse ((size_t) (0.5 * sr), 2000), 256).l);
+        };
+        check (echoAt (PatStairs) != echoAt (PatOff), "Pattern verschiebt die Delay-Zeit");
     }
 
     // A2/A3: bei konstanten Parametern ist der Ausgang unabhaengig von der Blockgroesse (auch 1, 441, wechselnd)

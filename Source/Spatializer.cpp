@@ -106,15 +106,19 @@ void Spatializer::process (float* l, float* r, int n, const PosSettings& p, cons
 
         // ---- Geometrie: Radius -> Distanz in Metern (Mindestabstand 1 m) ----
         const float radius = std::min (std::sqrt (x * x + y * y), 1.41421356f);
-        const float d = distanceMeters (radius);
+        // Stereo (Buehne): der Hoerer sitzt vor der Buehne, Y = +1 ist die Buehnenkante (nah), -1 die Rueckwand.
+        // Die vordere Haelfte bleibt praesent, hinten bis 2,8 m (-9 dB), schmaler, dumpfer, mehr Raum. X ist nur Panorama.
+        const float depth = clampf (0.5f * (1.0f - y), 0.0f, 1.0f);
+        const float dStage = 1.0f + 1.82f * depth * depth * depth;
+        const float d = lerp (dStage, distanceMeters (radius), bm);   // Binaural: Abstand zur Mitte (Hoerer in der Mitte)
         const float gDist = 1.0f / d;
         fGDist = gDist;
         const float azimuth = radius > 1e-4f ? std::atan2 (x, y) : 0.0f;       // 0 = vorne, +90 Grad = rechts
         const float elevation = z * 0.7853982f;                                 // +-45 Grad
-        const float rearW = std::max (0.0f, -std::cos (azimuth)) * std::min (1.0f, radius * 3.0f);
+        const float rearW = std::max (0.0f, -std::cos (azimuth)) * std::min (1.0f, radius * 3.0f);   // nur Binaural
 
         // Stereo breite sinkt mit Distanz
-        fWDist = 1.0f / (1.0f + 0.2f * (d - 1.0f));
+        fWDist = lerp (1.0f - 0.45f * depth * depth, 1.0f / (1.0f + 0.2f * (d - 1.0f)), bm);
 
         // Luftabsorption
         const float fcAir = 20000.0f / (1.0f + 0.9f * (d - 1.0f));
@@ -122,14 +126,12 @@ void Spatializer::process (float* l, float* r, int n, const PosSettings& p, cons
         // ---- Stereo-Modus ----
         const float pan = clampf (x, -1.0f, 1.0f);
         const float theta = (pan + 1.0f) * 0.25f * kPi;
-        const float rearLevel = 1.0f - 0.15f * rearW;
-        const float gS[2] = { gDist * rearLevel * 1.41421356f * std::cos (theta),
-                              gDist * rearLevel * 1.41421356f * std::sin (theta) };
+        const float gS[2] = { gDist * 1.41421356f * std::cos (theta),
+                              gDist * 1.41421356f * std::sin (theta) };
         const float itdS = std::abs (pan) * kMaxItdSeconds * fs;
         const float dS[2] = { pan > 0.0f ? itdS : 0.0f, pan < 0.0f ? itdS : 0.0f };
         const float shadowS = std::pow (0.3f, std::abs (pan));
-        const float fcRearS = fcAir * (1.0f - 0.45f * rearW);
-        const float fcS[2] = { fcRearS * (pan > 0.0f ? shadowS : 1.0f), fcRearS * (pan < 0.0f ? shadowS : 1.0f) };
+        const float fcS[2] = { fcAir * (pan > 0.0f ? shadowS : 1.0f), fcAir * (pan < 0.0f ? shadowS : 1.0f) };
         const float awS[2] = { 1.0f, 1.0f };
 
         // ---- Binaural-Modus (Kugel-Kopf) ----
@@ -180,7 +182,7 @@ void Spatializer::process (float* l, float* r, int n, const PosSettings& p, cons
         setPeak (peak[1], fz, 5.0f * z, 1.5f);
 
         // Fruehe Reflexionen (Anteil steigt mit Distanz)
-        fErAmt = o.earlyReflections ? 0.35f * clampf ((d - 1.0f) / 3.0f, 0.0f, 1.0f) : 0.0f;
+        fErAmt = o.earlyReflections ? lerp (0.4f * depth * depth * depth, 0.35f * clampf ((d - 1.0f) / 3.0f, 0.0f, 1.0f), bm) : 0.0f;
         }
         const float erA = std::exp (-2.0f * kPi * 5000.0f / fs);
         const float erTap[3] = { 0.0053f * fs, 0.0089f * fs, 0.0131f * fs };

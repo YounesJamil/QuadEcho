@@ -3,6 +3,7 @@
 #include "DelayLine.h"
 #include "DspTypes.h"
 #include "Oversampler.h"
+#include "Tape.h"
 
 namespace qe
 {
@@ -30,7 +31,9 @@ public:
                   float* wetOutL = nullptr, float* wetOutR = nullptr,
                   float* firstOutL = nullptr, float* firstOutR = nullptr,
                   const float* origInL = nullptr, const float* origInR = nullptr,
-                  float* origOutL = nullptr, float* origOutR = nullptr);
+                  float* origOutL = nullptr, float* origOutR = nullptr,
+                  const float* phaseModL = nullptr, const float* phaseModR = nullptr);
+    // phaseMod (optional): Verschiebung der Lesestelle in ms pro Sample (Phase-Modus des Routings), ohne Glaettung
 
     // Fuer die UI (lockfrei): aktuelle Modulation
     float getLfoValue() const { return lfoPub.load (std::memory_order_relaxed); }
@@ -74,6 +77,9 @@ private:
     float qSm[2] = { 0.8f, 0.8f };   // geglaettete Guete HP, LP
     float boostSm[2] = { 0.0f, 0.0f };   // geglaetteter Boost HP, LP (dB)
     PeakEq peakHp, peakLp;              // Glocke an der Grenzfrequenz
+    PeakEq peakBell;                    // freies Bell-Band
+    float bellSm = 0.0f;                // geglaetteter Gain des Bell-Bands (dB, 0 = aus)
+    bool frameBell = false;
     std::atomic<float> lfoPub { 0.0f }, envPub { 0.0f }, modPub { 0.0f }, rateHzPub { 1.0f };
     std::atomic<double> posPub { 0.0 };
     int lastTransition = -1;
@@ -88,8 +94,13 @@ private:
     SatCoefs frameSat;                  // Steuerwerte des laufenden Teilblocks
     bool frameHpOn = false, frameLpOn = false, frameHpPeak = false, frameLpPeak = false;
     float stableComp = 1.0f;            // STABLE: 1 / Filterspitze in der Schleife, je Teilblock geglaettet (~30 ms)
-    std::array<double, 7> stableKey {};  // Filterwerte der letzten Spitzensuche (nur bei Aenderung neu rechnen)
+    std::array<double, 10> stableKey {};  // Filterwerte der letzten Spitzensuche (nur bei Aenderung neu rechnen)
     float stableTarget = 1.0f;
+    // TAPE: Schreibweg mit Band-Charakter (tapeW), tapeF = dasselbe fuer die Leitung nur mit dem ersten Echo;
+    // Umschalten blendet ueber tapeSm (beide Wege laufen nur waehrend der Ueberblendung)
+    TapeStage tapeW, tapeF;
+    juce::SmoothedValue<float> tapeSm;
+    bool tapeLive = false;
     bool initialised = false;
     bool poisoned = false;   // ein Schleifen-Sample war nicht endlich: am Blockende neu aufsetzen
 };

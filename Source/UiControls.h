@@ -323,14 +323,14 @@ private:
 };
 
 // ---------------------------------------------------------------------------
-// LINK-Knopf der Zeit: leuchtet, wenn der rechte Regler frei ist (Parameter "link" aus). Aus (Standard) =
-// Single-Delay, der rechte Regler folgt dem linken und ist ausgegraut. Jeder Klick schaltet den Parameter
+// LINK-Knopf der Zeit: leuchtet bei Single-Delay (Parameter "link" an, Standard): der rechte Regler folgt dem
+// linken und ist ausgegraut. Aus = der rechte Regler ist frei. Jeder Klick schaltet den Parameter
 // direkt um; der Knopf schaltet sich nicht selbst, er zeigt nur an (so braucht es nie zwei Klicks).
 struct LinkToggle : public juce::ToggleButton
 {
     LinkToggle (Apvts& apvts, const juce::String& id, Colour col)
         : param (apvts.getParameter (id)),
-          attachment (*param, [this] (float v) { setToggleState (v < 0.5f, juce::dontSendNotification); }, apvts.undoManager)
+          attachment (*param, [this] (float v) { setToggleState (v > 0.5f, juce::dontSendNotification); }, apvts.undoManager)
     {
         setButtonText ("LINK");
         setColour (juce::ToggleButton::tickColourId, col);
@@ -347,15 +347,17 @@ struct LinkToggle : public juce::ToggleButton
 // hoch = Boost (Glocke an der Grenzfrequenz, 0 bis +18 dB; ganz unten sitzt der Punkt auf der Filterkurve).
 // Mit Alt gedrueckt hoch/runter = Guete Q (Resonanz und Breite der Glocke). Shift = fein.
 // Doppelklick: Frequenz und Resonanz des Punktes auf Standard. An/Aus: kleine Kaestchen HP/LP oben rechts.
-// Die Werte stehen klein oben links.
+// Die Werte stehen klein oben links. Bell-Band: Doppelklick auf eine freie Stelle setzt es dorthin (Frequenz, Gain),
+// Ziehen = Frequenz und Gain (-18 bis +18 dB), Alt = Breite (Q), Doppelklick auf das Band entfernt es.
 class FilterGraph : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    struct Ids { juce::String hpOn, lpOn, hp, lp, hpRes, lpRes, hpBoost, lpBoost; };
+    struct Ids { juce::String hpOn, lpOn, hp, lp, hpRes, lpRes, hpBoost, lpBoost, bellOn, bellHz, bellGain, bellQ; };
 
     FilterGraph (Apvts& apvts, const Ids& ids, Colour col) : colour (col)
     {
-        const juce::String list[kParams] = { ids.hpOn, ids.lpOn, ids.hp, ids.lp, ids.hpRes, ids.lpRes, ids.hpBoost, ids.lpBoost };
+        const juce::String list[kParams] = { ids.hpOn, ids.lpOn, ids.hp, ids.lp, ids.hpRes, ids.lpRes, ids.hpBoost, ids.lpBoost,
+                                             ids.bellOn, ids.bellHz, ids.bellGain, ids.bellQ };
         for (int k = 0; k < kParams; ++k)
         {
             params[(size_t) k] = apvts.getParameter (list[k]);
@@ -363,7 +365,7 @@ public:
                 *params[(size_t) k], [this, k] (float v) { value[(size_t) k] = v; repaint(); }, apvts.undoManager);
             attach[(size_t) k]->sendInitialUpdate();
         }
-        setTooltip ("Drag a point: left/right = frequency, up = boost at the cutoff (up to +18 dB).\nAlt + drag up/down: Q (resonance and width). Shift = fine. Double-click: back to default.\nHP / LP boxes top right: filter on/off. 18 dB per octave.");
+        setTooltip ("Drag a point: left/right = frequency, up = boost at the cutoff (up to +18 dB).\nAlt + drag up/down: Q (resonance and width). Shift = fine. Double-click: back to default.\nDouble-click on an empty spot: bell band there (drag = frequency and gain, Alt = width, double-click on it: remove).\nHP / LP boxes top right: filter on/off. 18 dB per octave.");
     }
 
     void paint (juce::Graphics& g) override
@@ -427,6 +429,19 @@ public:
             g.setFont (ui::uiFont (9.5f, true));
             g.drawText (h == 0 ? "HP" : "LP", circle.translated (0.0f, -13.0f).expanded (6.0f, 0.0f), juce::Justification::centred);
         }
+        if (bellOn())   // Bell-Band: Raute auf seinem Gain, mit Wert
+        {
+            const auto p = handlePos (2);
+            juce::Path d;
+            d.addQuadrilateral (p.x, p.y - 7.0f, p.x + 7.0f, p.y, p.x, p.y + 7.0f, p.x - 7.0f, p.y);
+            g.setColour (colour);
+            g.fillPath (d);
+            g.setColour (kBg);
+            g.strokePath (d, juce::PathStrokeType (1.2f));
+            g.setColour (kText);
+            g.setFont (ui::uiFont (9.5f, true));
+            g.drawText ((bellGain() >= 0.0f ? "+" : "") + juce::String (bellGain(), 1) + " dB", juce::Rectangle<float> (p.x - 30.0f, p.y + (bellGain() >= 0.0f ? 8.0f : -20.0f), 60.0f, 12.0f), juce::Justification::centred);
+        }
 
         // Zeile ueber der Kurve: links die Werte, rechts die Kaestchen HP / LP zum An- und Ausschalten
         g.setFont (ui::uiFont (10.5f));
@@ -467,11 +482,19 @@ public:
         moved = false;
         if (dragged < 0) return;
         lastPos = e.position;
-        logF = std::log (freq (dragged));
-        qDb = juce::Decibels::gainToDecibels (q (res (dragged)));
-        boostDb = boost (dragged);
-        for (int k : { Hp, HpRes, HpBoost })
-            attach[(size_t) (k + dragged)]->beginGesture();
+        if (dragged == 2)
+        {
+            logF = std::log (bellHz());
+            qDb = juce::Decibels::gainToDecibels (bellQ());
+            boostDb = bellGain();
+        }
+        else
+        {
+            logF = std::log (freq (dragged));
+            qDb = juce::Decibels::gainToDecibels (q (res (dragged)));
+            boostDb = boost (dragged);
+        }
+        for (int k : gestureParams (dragged)) attach[(size_t) k]->beginGesture();
     }
 
     void mouseDrag (const juce::MouseEvent& e) override
@@ -482,6 +505,24 @@ public:
         const auto pa = plotArea();
         const float fine = e.mods.isShiftDown() ? 0.1f : 1.0f;
         const float dyDb = -(e.position.y - lastPos.y) * fine * (kDbTop - kDbBottom) / pa.getHeight();
+        if (dragged == 2)
+        {
+            if (e.mods.isAltDown())   // Alt: Breite (Q) des Bell-Bands
+            {
+                const auto& qr = params[BellQ]->getNormalisableRange();
+                qDb = juce::jlimit (juce::Decibels::gainToDecibels (qr.start), juce::Decibels::gainToDecibels (qr.end), qDb + dyDb);
+                attach[BellQ]->setValueAsPartOfGesture (juce::Decibels::decibelsToGain (qDb));
+            }
+            else
+            {
+                logF += (double) ((e.position.x - lastPos.x) * fine) * std::log (20000.0 / 20.0) / (double) pa.getWidth();
+                boostDb = juce::jlimit (-18.0f, 18.0f, boostDb + dyDb);
+                attach[BellHz]->setValueAsPartOfGesture (juce::jlimit (20.0f, 20000.0f, (float) std::exp (logF)));
+                attach[BellGain]->setValueAsPartOfGesture (boostDb);
+            }
+            lastPos = e.position;
+            return;
+        }
         const float resMax = params[(size_t) (HpRes + dragged)]->getNormalisableRange().end;
         const float boostMax = params[(size_t) (HpBoost + dragged)]->getNormalisableRange().end;
         if (e.mods.isAltDown())   // Alt: nur die Guete (hoch/runter)
@@ -504,21 +545,33 @@ public:
     void mouseUp (const juce::MouseEvent&) override
     {
         if (dragged < 0) return;
-        for (int k : { Hp, HpRes, HpBoost })
-            attach[(size_t) (k + dragged)]->endGesture();
+        for (int k : gestureParams (dragged)) attach[(size_t) k]->endGesture();
         dragged = -1;
     }
 
     void mouseDoubleClick (const juce::MouseEvent& e) override
     {
         const int h = nearest (e.position);
-        if (h < 0) return;
+        if (h == 2) { attach[BellOn]->setValueAsCompleteGesture (0.0f); return; }   // Bell-Band entfernen
+        if (h < 0)
+        {
+            // freie Stelle: Bell-Band an Frequenz und Hoehe der Maus (zwischen -18 und +18 dB)
+            if (! plotArea().contains (e.position)) return;
+            const float gain = juce::jlimit (-18.0f, 18.0f, dbOf (e.position.y));
+            for (int k : { BellHz, BellGain, BellOn }) attach[(size_t) k]->beginGesture();
+            attach[BellHz]->setValueAsPartOfGesture (juce::jlimit (20.0f, 20000.0f, freqOf (e.position.x)));
+            attach[BellGain]->setValueAsPartOfGesture (std::abs (gain) < 1.0f ? 6.0f : gain);
+            attach[BellOn]->setValueAsPartOfGesture (1.0f);
+            for (int k : { BellHz, BellGain, BellOn }) attach[(size_t) k]->endGesture();
+            return;
+        }
         for (int k : { Hp + h, HpRes + h, HpBoost + h })
             attach[(size_t) k]->setValueAsCompleteGesture (params[(size_t) k]->convertFrom0to1 (params[(size_t) k]->getDefaultValue()));
     }
 
 private:
-    enum { HpOn = 0, LpOn, Hp, Lp, HpRes, LpRes, HpBoost, LpBoost, kParams };
+    enum { HpOn = 0, LpOn, Hp, Lp, HpRes, LpRes, HpBoost, LpBoost, BellOn, BellHz, BellGain, BellQ, kParams };
+    std::vector<int> gestureParams (int h) const { return h == 2 ? std::vector<int> { BellHz, BellGain, BellQ } : std::vector<int> { Hp + h, HpRes + h, HpBoost + h }; }
     static constexpr float kDbTop = 30.0f, kDbBottom = -36.0f;   // oben Platz fuer Resonanz plus Boost
     static constexpr float kFirstOrderDb = -3.0103f;   // Stufe 1. Ordnung bei der Grenzfrequenz
 
@@ -537,6 +590,11 @@ private:
     float res (int h) const { return value[(size_t) (HpRes + h)]; }
     float boost (int h) const { return value[(size_t) (HpBoost + h)]; }
     static float q (float r) { return 0.7071f + r * r * 4.0f; }
+    bool bellOn() const { return value[BellOn] > 0.5f; }
+    float bellHz() const { return value[BellHz]; }
+    float bellGain() const { return value[BellGain]; }
+    float bellQ() const { return value[BellQ]; }
+    float dbOf (float y) const { const auto pa = plotArea(); return kDbTop - (y - pa.getY()) * (kDbTop - kDbBottom) / pa.getHeight(); }
 
     float xOf (float f) const { const auto pa = plotArea(); return pa.getX() + pa.getWidth() * std::log (f / 20.0f) / std::log (1000.0f); }
     float freqOf (float x) const { const auto pa = plotArea(); return 20.0f * std::pow (1000.0f, (x - pa.getX()) / pa.getWidth()); }
@@ -559,11 +617,17 @@ private:
                 gain *= std::sqrt ((d + (x * A / qq) * (x * A / qq)) / (d + (x / (A * qq)) * (x / (A * qq))));
             }
         }
+        if (bellOn() && std::abs (bellGain()) > qe::kBoostOffDb)   // Bell-Band (Anhebung oder Absenkung)
+        {
+            const float x = f / bellHz(), qq = bellQ(), A = std::pow (10.0f, bellGain() / 40.0f), d = (1.0f - x * x) * (1.0f - x * x);
+            gain *= std::sqrt ((d + (x * A / qq) * (x * A / qq)) / (d + (x / (A * qq)) * (x / (A * qq))));
+        }
         return juce::Decibels::gainToDecibels (gain, -100.0f);
     }
 
     juce::Point<float> handlePos (int h) const
     {
+        if (h == 2) return { xOf (bellHz()), yOf (bellGain()) };
         return { xOf (freq (h)), yOf (handleDb (h)) };
     }
 
@@ -571,7 +635,7 @@ private:
     {
         int best = -1;
         float bestD = 16.0f;
-        for (int h = 0; h < 2; ++h)
+        for (int h = 0; h < (bellOn() ? 3 : 2); ++h)
         {
             const float d = handlePos (h).getDistanceFrom (p);
             if (d < bestD) { bestD = d; best = h; }

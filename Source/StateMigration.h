@@ -13,7 +13,8 @@ namespace qe
 // 5 = Sync-Modus je Kanal (syncMode = L, syncModeR neu)
 // 6 = Limiter wahlweise nur auf die Echos (limitDry neu, Standard aus); aeltere Zustaende behalten "auf alles"
 // 7 = Notenwerte ab einem Takt als Taktzahl (1, 1.5, 2 .. 24 statt 1/1, 2/1, 4/1): andere Indizes in kNoteDivs
-constexpr int kStateVersion = 7;
+// 8 = Schalter x4 ersetzt durch LFO- und ENV-Faktor (0,1-10), die auch auf das Filter wirken
+constexpr int kStateVersion = 8;
 inline const char* const kStateVersionAttr = "qeVersion";
 
 namespace detail
@@ -200,6 +201,36 @@ inline void remapNoteDivsV7 (juce::XmlElement& xml)
     remapParam ("gf_div");
     remapParam ("nz_div");
 }
+
+// 7 -> 8: x4 an wird zu LFO- und ENV-Faktor 4 (die Delay-Modulation bleibt gleich). Die Faktoren wirken jetzt auch
+// auf das Filter, das x4 nicht kannte: die Filter-Tiefe wird geviertelt, damit es gleich klingt.
+inline void migrateModFactorsV8 (juce::XmlElement& xml)
+{
+    auto find = [&xml] (const juce::String& id) -> juce::XmlElement*
+    {
+        for (auto* c : xml.getChildWithTagNameIterator ("PARAM"))
+            if (c->getStringAttribute ("id") == id) return c;
+        return nullptr;
+    };
+    static const char* const letters[4] = { "a", "b", "c", "d" };
+    for (int u = 0; u < 4; ++u)
+    {
+        const juce::String L (letters[u]);
+        auto* x4 = find (L + "_x4");
+        if (x4 == nullptr) continue;
+        if (x4->getDoubleAttribute ("value") > 0.5)
+        {
+            for (const char* name : { "_lfoAmt", "_envAmt" })
+            {
+                auto* e = find (L + name);
+                if (e == nullptr) { e = xml.createNewChildElement ("PARAM"); e->setAttribute ("id", L + name); }
+                e->setAttribute ("value", 4.0);
+            }
+            if (auto* fd = find (L + "_fDepth")) fd->setAttribute ("value", fd->getDoubleAttribute ("value") / 4.0);
+        }
+        xml.removeChildElement (x4, true);
+    }
+}
 } // namespace detail
 
 inline void migrateState (juce::XmlElement& xml)
@@ -207,8 +238,12 @@ inline void migrateState (juce::XmlElement& xml)
     const int version = xml.getIntAttribute (kStateVersionAttr, 1);
     if (version >= kStateVersion)
         return;
-    detail::migrateToV6 (xml, version);   // rechnet mit der alten Notenwert-Liste
-    detail::remapNoteDivsV7 (xml);
+    if (version < 7)
+    {
+        detail::migrateToV6 (xml, version);   // rechnet mit der alten Notenwert-Liste
+        detail::remapNoteDivsV7 (xml);
+    }
+    detail::migrateModFactorsV8 (xml);
     xml.setAttribute (kStateVersionAttr, kStateVersion);
 }
 } // namespace qe

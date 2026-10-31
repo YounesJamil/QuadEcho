@@ -58,6 +58,7 @@ void QuadEngine::prepare (double sampleRate)
     inclDrySm.reset (sampleRate, 0.03);
     mixSm.reset (sampleRate, 0.03);
     outSm.reset (sampleRate, 0.03);
+    routeDepthSm.reset (sampleRate, 0.05);
     for (auto& p : unitPeaks) p.store (0.0f);
     duckEnvRel = 1.0f - std::exp (-1.0f / (0.03f * (float) sr));
     reset();
@@ -83,6 +84,9 @@ void QuadEngine::reset()
 // mit Attack (Absenken) und Release (Zurueckkommen) geglaettet
 void QuadEngine::computeDuck (int n, const DuckSettings& d, float* gain)
 {
+    float inPk = 0.0f;   // auch ohne Ducking: die Anzeige hilft, den Threshold vorab einzustellen
+    for (int i = 0; i < n; ++i) inPk = std::max ({ inPk, std::abs (ext.l[(size_t) i]), std::abs (ext.r[(size_t) i]) });
+    if (inPk > inputPeak.load (std::memory_order_relaxed)) inputPeak.store (inPk, std::memory_order_relaxed);
     if (! d.on && duckDb > -1.0e-3f)
     {
         duckDb = 0.0f;
@@ -131,10 +135,13 @@ void QuadEngine::process (float* l, float* r, int n, const EngineSettings& s, do
 void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& s, double bpm, double ppq)
 {
     const int requested = std::min (std::max (s.algorithm, 0), kNumAlgorithms - 1);
+    const int requestedRoute = std::min (std::max (s.routeMode, 0), (int) RoutePhaseDry);
     bool snapWeights = false;
     if (! initialised)
     {
         activeAlgo = requested;
+        activeRoute = requestedRoute;
+        routeDepthSm.setCurrentAndTargetValue (s.routeDepth);
         mixSm.setCurrentAndTargetValue (s.globalMix);
         outSm.setCurrentAndTargetValue (dbToGain (s.globalOutDb));
         intoSm.setCurrentAndTargetValue (s.noise.into);
@@ -153,11 +160,14 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
     intoSm.setTargetValue (s.noise.into);
     inclDrySm.setTargetValue (s.gfilter.includeDry ? 1.0f : 0.0f);
 
-    // Algorithmuswechsel: Ausgang kurz ausblenden, Topologie wechseln, wieder einblenden
-    if (requested != activeAlgo && gateState == Gate::Idle) gateState = Gate::Down;
+    routeDepthSm.setTargetValue (s.routeDepth);
+
+    // Algorithmus- oder Routing-Wechsel: Ausgang kurz ausblenden, Topologie wechseln, wieder einblenden
+    if ((requested != activeAlgo || requestedRoute != activeRoute) && gateState == Gate::Idle) gateState = Gate::Down;
     if (gateState == Gate::Down && gate <= 0.0f)
     {
         activeAlgo = requested;
+        activeRoute = requestedRoute;
         gateState = Gate::Up;
         for (auto& sp : spatial) sp.reset();
         spatialLive.fill (false);
@@ -177,8 +187,8 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
     so.binaural = s.binaural;
     so.doppler = s.doppler;
 
-    const bool gfOn = s.gfilter.hpOn || s.gfilter.lpOn;
-    gfilter.beginChunk (s.gfilter, bpm, n, ppq);
+    gfilter.beginChunk (s.gfilter, bpm, n, ppq, ext.l.data(), ext.r.data());
+    const bool gfOn = gfilter.active();
     const bool needFirst = s.gfilter.skipFirstEcho && gfOn;   // erste-Echo-Leitung nur lesen, wenn sie gebraucht wird
 
     // ---- Noise: roh erzeugen, Anteile "direkt" und "in die Echos" ----
@@ -205,12 +215,45 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
     }
     computeDuck (n, s.duck, duckGa.data());
 
+    // Phase-Modus: eine gespeiste Einheit bekommt den Eingang (Traeger); ihre Quellen verschieben nur ihre Lesestelle,
+    // mit dem Echo-Anteil (Phase) oder dem ganzen Ausgang inklusive Original (Phase + Dry), gemittelt wie im Audio-Modus
+    const bool phaseRoute = activeRoute != RouteAudio;
+    std::array<float, kChunk> routeMs;
+    for (int i = 0; i < n; ++i) { const float d = routeDepthSm.getNextValue(); routeMs[(size_t) i] = d * d * kMaxRouteMs; }
+
     for (int u = 0; u < kNumUnits; ++u)
     {
         const auto uu = (size_t) u;
         const int mask = algo.sources[uu];
+        const bool phaseFed = phaseRoute && mask != 0;
+        if (phaseFed)
+        {
+            int count = 0;
+            std::fill (phaseMod.l.begin(), phaseMod.l.begin() + n, 0.0f);
+            std::fill (phaseMod.r.begin(), phaseMod.r.begin() + n, 0.0f);
+            const float dryPart = activeRoute == RoutePhaseDry ? 0.0f : 1.0f;   // Phase: Original-Spur abziehen
+            for (int j = 0; j < kNumUnits; ++j)
+                if (mask & (1 << j))
+                {
+                    ++count;
+                    const auto uj = (size_t) j;
+                    for (int i = 0; i < n; ++i)
+                    {
+                        const auto ui = (size_t) i;
+                        phaseMod.l[ui] += outs[uj].l[ui] - dryPart * origs[uj].l[ui];
+                        phaseMod.r[ui] += outs[uj].r[ui] - dryPart * origs[uj].r[ui];
+                    }
+                }
+            const float inv = 1.0f / (float) std::max (count, 1);
+            for (int i = 0; i < n; ++i)
+            {
+                const auto ui = (size_t) i;
+                phaseMod.l[ui] *= inv * routeMs[ui];
+                phaseMod.r[ui] *= inv * routeMs[ui];
+            }
+        }
 
-        if (mask == 0)
+        if (mask == 0 || phaseFed)
         {
             std::copy (ext.l.begin(), ext.l.begin() + n, src.l.begin());
             std::copy (ext.r.begin(), ext.r.begin() + n, src.r.begin());
@@ -233,7 +276,7 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
         }
         else
         {
-            int count = 0;
+            int count = 0;   // Audio-Modus: Quellen werden gemittelt und gespeist
             for (auto* blk : { &src, &origSrc })
             {
                 std::fill (blk->l.begin(), blk->l.begin() + n, 0.0f);
@@ -271,7 +314,8 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
             units[uu].process (src.l.data(), src.r.data(), tmp.l.data(), tmp.r.data(), n, es, bpm,
                                nullptr, nullptr,
                                needFirst ? firstTmp.l.data() : nullptr, needFirst ? firstTmp.r.data() : nullptr,
-                               origSrc.l.data(), origSrc.r.data(), origTmp.l.data(), origTmp.r.data());
+                               origSrc.l.data(), origSrc.r.data(), origTmp.l.data(), origTmp.r.data(),
+                               phaseFed ? phaseMod.l.data() : nullptr, phaseFed ? phaseMod.r.data() : nullptr);
             for (int i = 0; i < n; ++i)
             {
                 const auto ui = (size_t) i;

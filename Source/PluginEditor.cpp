@@ -78,6 +78,38 @@ QuadEchoEditor::QuadEchoEditor (QuadEchoProcessor& p)
     content.addAndMakeVisible (*masterMeter);
 
     content.addAndMakeVisible (routing);
+
+    // Routing-Modus als Textfelder, daneben die Tiefe der Phasenmodulation als Wertfeld (wie die Offset-Pillen)
+    {
+        std::vector<ui::IconChoice::Icon> list;
+        for (const char* t : { "AUDIO", "PHASE", "PHASE + DRY" })
+            list.push_back ([t] (juce::Graphics& g, juce::Rectangle<float> r, juce::Colour c)
+                            { g.setColour (c); g.setFont (ui::uiFont (11.0f, true)); g.drawText (t, r, juce::Justification::centred); });
+        routeMode = std::make_unique<ui::IconChoice> (apvts, qe::kIdRouteMode, std::move (list),
+            juce::StringArray { "Audio: a unit feeds the next with its sound (echoes of echoes)",
+                                "Phase: the echoes of a unit move the delay time of the next one (FM-like); the next one gets your input",
+                                "Phase + Dry: like Phase, but the whole output (with the original) modulates: every note bends itself" },
+            ui::kAccent);
+        content.addAndMakeVisible (*routeMode);
+        routeDepth.getProperties().set ("numberbox", true);
+        routeDepth.setColour (juce::Slider::textBoxTextColourId, ui::kText);
+        routeDepth.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
+        routeDepth.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        routeDepthAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, qe::kIdRouteDepth, routeDepth);
+        routeDepth.textFromValueFunction = [] (double v) { const double ms = v * v * qe::kMaxRouteMs; return "Depth " + juce::String (ms, ms < 1.0 ? 2 : 1) + " ms"; };
+        routeDepth.valueFromTextFunction = [] (const juce::String& t) { return std::sqrt (std::max (0.0, t.retainCharacters (".0123456789").getDoubleValue()) / (double) qe::kMaxRouteMs); };
+        routeDepth.setDoubleClickReturnValue (true, 0.25);
+        routeDepth.setTooltip ("Phase depth: how far the source moves the delay time at full level (up to 10 ms, fine steps at the start). Only in PHASE modes.");
+        routeDepth.updateText();
+        content.addAndMakeVisible (routeDepth);
+        routeWatch = std::make_unique<juce::ParameterAttachment> (*apvts.getParameter (qe::kIdRouteMode), [this] (float v)
+        {
+            const bool phase = v > 0.5f;
+            routeDepth.setEnabled (phase);
+            routeDepth.setAlpha (phase ? 1.0f : 0.4f);
+        });
+        routeWatch->sendInitialUpdate();
+    }
     content.addAndMakeVisible (pad);
 
     // Globale Regler
@@ -340,7 +372,9 @@ void QuadEchoEditor::resized()
     outLabel.setBounds (806, 14, 32, 20);
     masterMeter->setBounds (842, 19, 148, 10);
 
-    routing.setBounds (20, 48, 360, 152);
+    routing.setBounds (20, 48, 360, 126);
+    routeMode->setBounds (20, 178, 260, 22);
+    routeDepth.setBounds (286, 179, 94, 20);
 
     // Master: Mix, Output, Feedback-Bremse, Limiter
     const auto m = masterCard();

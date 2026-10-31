@@ -50,35 +50,57 @@ public:
         const auto c = pa.getCentre();
         const float hw = pa.getWidth() * 0.5f;
 
-        // Quadratische Flaeche, Entfernungsringe als echte Kreise (Radius 1/3, 2/3, 1): gleiche Entfernung
-        // sieht in jeder Richtung gleich aus
         g.setColour (ui::kBg.withAlpha (0.35f));
         g.fillRoundedRectangle (pa, 6.0f);
-        for (int i = 1; i <= 3; ++i)
-        {
-            const float f = (float) i / 3.0f;
-            g.setColour (ui::kLine.withAlpha (i == 3 ? 0.95f : 0.55f));
-            g.drawEllipse (c.x - hw * f, c.y - hw * f, hw * f * 2.0f, hw * f * 2.0f, 1.0f);
-        }
-        g.setColour (ui::kLine.withAlpha (0.6f));
-        g.drawLine (c.x, pa.getY(), c.x, pa.getBottom(), 1.0f);
-        g.drawLine (pa.getX(), c.y, pa.getRight(), c.y, 1.0f);
-
         g.setFont (ui::uiFont (11.0f));
+        auto listener = [&g] (juce::Point<float> h)   // Hoerer, Nase zeigt nach oben (vorne)
+        {
+            g.setColour (ui::kText);
+            g.fillEllipse (h.x - 8.0f, h.y - 8.0f, 16.0f, 16.0f);
+            g.fillEllipse (h.x - 12.0f, h.y - 3.0f, 5.0f, 8.0f);
+            g.fillEllipse (h.x + 7.0f, h.y - 3.0f, 5.0f, 8.0f);
+            juce::Path nose;
+            nose.addTriangle (h.x - 3.0f, h.y - 7.0f, h.x + 3.0f, h.y - 7.0f, h.x, h.y - 13.0f);
+            g.fillPath (nose);
+        };
+        if (binaural)
+        {
+            // Raum um den Kopf: Entfernungsringe als echte Kreise (Radius 1/3, 2/3, 1), Hoerer in der Mitte
+            for (int i = 1; i <= 3; ++i)
+            {
+                const float f = (float) i / 3.0f;
+                g.setColour (ui::kLine.withAlpha (i == 3 ? 0.95f : 0.55f));
+                g.drawEllipse (c.x - hw * f, c.y - hw * f, hw * f * 2.0f, hw * f * 2.0f, 1.0f);
+            }
+            g.setColour (ui::kLine.withAlpha (0.6f));
+            g.drawLine (c.x, pa.getY(), c.x, pa.getBottom(), 1.0f);
+            g.drawLine (pa.getX(), c.y, pa.getRight(), c.y, 1.0f);
+            g.setColour (ui::kDim);
+            g.drawText ("FRONT", juce::Rectangle<float> (c.x - 30.0f, full.getY() + 4.0f, 60.0f, 14.0f), juce::Justification::centred);
+            g.drawText ("BACK", juce::Rectangle<float> (c.x - 30.0f, pa.getBottom() + 2.0f, 60.0f, 14.0f), juce::Justification::centred);
+            listener (c);
+        }
+        else
+        {
+            // Stereofeld als Buehne: Tiefenlinien (vordere Haelfte praesent), Panorama-Linien, Hoerer unten davor
+            for (int i = 1; i <= 3; ++i)
+            {
+                const float yy = pa.getBottom() - pa.getHeight() * (float) i / 4.0f;
+                g.setColour (ui::kLine.withAlpha (i == 2 ? 0.75f : 0.45f));
+                g.drawHorizontalLine ((int) yy, pa.getX() + 4.0f, pa.getRight() - 4.0f);
+            }
+            g.setColour (ui::kLine.withAlpha (0.6f));
+            g.drawLine (c.x, pa.getY(), c.x, pa.getBottom(), 1.0f);
+            g.setColour (ui::kLine.withAlpha (0.95f));
+            g.drawLine (pa.getX(), pa.getBottom() - 0.5f, pa.getRight(), pa.getBottom() - 0.5f, 1.4f);   // Buehnenkante
+            g.setColour (ui::kDim);
+            g.drawText ("BACK", juce::Rectangle<float> (c.x - 30.0f, full.getY() + 4.0f, 60.0f, 14.0f), juce::Justification::centred);
+            g.drawText ("FRONT", juce::Rectangle<float> (c.x + 16.0f, pa.getBottom() + 2.0f, 60.0f, 14.0f), juce::Justification::centredLeft);
+            listener ({ c.x, pa.getBottom() + 12.0f });
+        }
         g.setColour (ui::kDim);
-        g.drawText ("FRONT", juce::Rectangle<float> (c.x - 30.0f, full.getY() + 4.0f, 60.0f, 14.0f), juce::Justification::centred);
-        g.drawText ("BACK", juce::Rectangle<float> (c.x - 30.0f, pa.getBottom() + 2.0f, 60.0f, 14.0f), juce::Justification::centred);
         g.drawText ("L", juce::Rectangle<float> (pa.getX() - 18.0f, c.y - 8.0f, 14.0f, 16.0f), juce::Justification::centred);
         g.drawText ("R", juce::Rectangle<float> (pa.getRight() + 4.0f, c.y - 8.0f, 14.0f, 16.0f), juce::Justification::centred);
-
-        // Hoerer (Nase zeigt nach vorne)
-        g.setColour (ui::kText);
-        g.fillEllipse (c.x - 8.0f, c.y - 8.0f, 16.0f, 16.0f);
-        g.fillEllipse (c.x - 12.0f, c.y - 3.0f, 5.0f, 8.0f);
-        g.fillEllipse (c.x + 7.0f, c.y - 3.0f, 5.0f, 8.0f);
-        juce::Path nose;
-        nose.addTriangle (c.x - 3.0f, c.y - 7.0f, c.x + 3.0f, c.y - 7.0f, c.x, c.y - 13.0f);
-        g.fillPath (nose);
 
         // Punkte
         for (int u = 0; u < kPoints; ++u)
@@ -167,7 +189,7 @@ public:
             const auto pa = padArea();
             const auto c = pa.getCentre();
             setValue (dragged, 0, juce::jlimit (-1.0f, 1.0f, (e.position.x - c.x) / (pa.getWidth() * 0.5f)));
-            setValue (dragged, 1, juce::jlimit (-1.0f, 1.0f, (c.y - e.position.y) / (pa.getHeight() * 0.5f)));
+            setValue (dragged, 1, juce::jlimit (-1.0f, 1.0f, ySign() * (c.y - e.position.y) / (pa.getHeight() * 0.5f)));
         }
         lastPos = e.position;
     }
@@ -219,8 +241,10 @@ private:
         const auto pa = padArea();
         const auto c = pa.getCentre();
         const auto uu = (size_t) u;
-        return { c.x + value[uu][0] * pa.getWidth() * 0.5f, c.y - value[uu][1] * pa.getHeight() * 0.5f };
+        return { c.x + value[uu][0] * pa.getWidth() * 0.5f, c.y - ySign() * value[uu][1] * pa.getHeight() * 0.5f };
     }
+    // Y = +1 ist immer "vorne": bei Binaural oben (vor dem Hoerer), auf der Stereo-Buehne unten (Buehnenkante, nah)
+    float ySign() const { return binaural ? 1.0f : -1.0f; }
 
     int nearest (juce::Point<float> p, float maxDist = 26.0f) const
     {

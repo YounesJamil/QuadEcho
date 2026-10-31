@@ -10,37 +10,37 @@ VST3-Plugin, AU (Mac) und Standalone-App für **Windows und macOS** (JUCE 9.0.4,
 
 **Lokal unter Windows:** Visual Studio 2026 (oder Build Tools mit C++), CMake >= 3.22, Git, Internet beim ersten Konfigurieren (JUCE wird per FetchContent geholt).
 
-JUCE und der Build-Ordner liegen bewusst auf Laufwerk Q: (C: ist knapp, Y: ist langsam). Der Pfad für JUCE ist in `CMakeLists.txt` als Cache-Variable `QUADECHO_DEPS_DIR` einstellbar. `.vscode/settings.json` verhindert, dass die VS-Code-CMake-Erweiterung von selbst konfiguriert.
+JUCE landet standardmäßig im Build-Ordner; ein anderer Ort ist mit `-DQUADECHO_DEPS_DIR=<pfad>` einstellbar.
 
 ```powershell
-cmake -S . -B Q:/QuadEcho/build -G "Visual Studio 18 2026" -A x64
-cmake --build Q:/QuadEcho/build --config Release --parallel --target QuadEcho_VST3 QuadEcho_Standalone
+cmake -S . -B build -G "Visual Studio 18 2026" -A x64
+cmake --build build --config Release --parallel --target QuadEcho_VST3 QuadEcho_Standalone
 ```
 
-Ergebnis: `Q:\QuadEcho\build\QuadEcho_artefacts\Release\VST3\QUAD ECHO.vst3` und `...\Standalone\QUAD ECHO.exe`. Eine fertige Kopie liegt in `dist/`.
+Ergebnis: `build\QuadEcho_artefacts\Release\VST3\QUAD ECHO.vst3` und `...\Standalone\QUAD ECHO.exe`.
 
 ### Tests
 
 ```powershell
-cmake --build Q:/QuadEcho/build --config Release --parallel --target QuadEchoTests
-Q:\QuadEcho\build\QuadEchoTests_artefacts\Release\QuadEchoTests.exe test-renders
+cmake --build build --config Release --parallel --target QuadEchoTests
+build\QuadEchoTests_artefacts\Release\QuadEchoTests.exe test-renders
 ```
 
-605 Prüfungen (inkl. Regressionstests zu den Audit-Befunden, siehe AUDIT.md): Delay-Zeiten bei 44,1-192 kHz, Feedback, Modulation, Klickfreiheit, Algorithmen, 3D-Platzierung, Binaural, Doppler, Mute/Solo/Output-aus, Place Dry, analoger Drive, Drive in der Schleife, globaler Filter, Noise, Limiter, Feedback-Bremse, Dry/Wet-Konzept (100 % Wet ohne Original, auch in Ketten), Freeze, Ducking, Umrechnung alter Zustände, Platzierung bei ausgeschalteter Ausgangseinheit, Sync-Modi (Notes/Triplet/Dotted/16th), Offset und Sync-Modus je Kanal, Filtersteilheit 18 dB/Oktave, Filter-Boost, Random-LFO, Stereo-Phase des globalen Filters, Fuzz auf NaN/Inf, CPU-Last. Zusätzlich 60 WAV-Renders nach `test-renders/` (nicht im Git).
+605 Prüfungen (inkl. Regressionstests zum DSP-Audit): Delay-Zeiten bei 44,1-192 kHz, Feedback, Modulation, Klickfreiheit, Algorithmen, 3D-Platzierung, Binaural, Doppler, Mute/Solo/Output-aus, Place Dry, analoger Drive, Drive in der Schleife, globaler Filter, Noise, Limiter, Feedback-Bremse, Dry/Wet-Konzept (100 % Wet ohne Original, auch in Ketten), Freeze, Ducking, Umrechnung alter Zustände, Platzierung bei ausgeschalteter Ausgangseinheit, Sync-Modi (Notes/Triplet/Dotted/16th), Offset und Sync-Modus je Kanal, Filtersteilheit 18 dB/Oktave, Filter-Boost, Random-LFO, Stereo-Phase des globalen Filters, Fuzz auf NaN/Inf, CPU-Last. Zusätzlich 60 WAV-Renders nach `test-renders/` (nicht im Git).
 
 UI-Pruefung ohne Fenster: `QuadEchoUiShot` rendert den Editor in ein PNG, z. B. `QuadEchoUiShot.exe noise.png expert=1 expertPage=1 nz_on=1 audio=1` (Parameter als `id=wert`, siehe Parameterliste).
 
 Validierung des Plugins mit [pluginval](https://github.com/Tracktion/pluginval):
 
 ```powershell
-pluginval.exe --strictness-level 10 --validate-in-process --validate "dist\QUAD ECHO.vst3"
+pluginval.exe --strictness-level 10 --validate-in-process --validate "build\QuadEcho_artefacts\Release\VST3\QUAD ECHO.vst3"
 ```
 
 ## Installieren
 
 Ausführlich für Windows und Mac (inklusive der Mac-Freigabe per Terminal): [INSTALL.md](INSTALL.md).
 
-Kurz für Windows: den Ordner `QUAD ECHO.vst3` aus `dist/` nach `C:\Program Files\Common Files\VST3\` kopieren (Admin-Rechte nötig) oder nach `%LOCALAPPDATA%\Programs\Common\VST3\` (pro Benutzer, wird von vielen Hosts gelesen). Danach im Host neu nach Plugins suchen lassen.
+Kurz für Windows: den Ordner `QUAD ECHO.vst3` (aus dem Zip oder dem Build-Ordner) nach `C:\Program Files\Common Files\VST3\` kopieren (Admin-Rechte nötig) oder nach `%LOCALAPPDATA%\Programs\Common\VST3\` (pro Benutzer, wird von vielen Hosts gelesen). Danach im Host neu nach Plugins suchen lassen.
 
 ## Bedienung
 
@@ -99,7 +99,7 @@ Vier Chips A-D: Klick wählt die Einheit zum Bearbeiten, Klick auf den Buchstabe
 
 ### 3D-Pad (Mitte oben)
 
-Draufsicht, **der Hörer sitzt in der Mitte**: oben vorne, unten hinten, links und rechts wie erwartet. Die Fläche ist quadratisch, die Ringe sind echte Kreise und zeigen die Entfernung: Gleich weit entfernte Punkte liegen in jeder Richtung auf demselben Ring. Punkte A-D ziehen: X = links/rechts, Y = vorne/hinten. **Shift-Ziehen oder Mausrad** ändert die Höhe Z (Punktgröße und Schatten), Doppelklick setzt Z auf 0.
+Zwei Ansichten, je nach `BINAURAL`. **Stereo (Binaural aus): Bühne.** Der Hörer sitzt unten vor der Bühne, X ist das Panorama, Y die Tiefe: unten die Bühnenkante (FRONT, nah und präsent), oben die Rückwand (BACK). **Binaural: Draufsicht, der Hörer sitzt in der Mitte**, oben vorne, unten hinten; die Ringe zeigen die Entfernung. Y = +1 heißt in beiden Ansichten „vorne“, die Bühne zeichnet das Feld nur gespiegelt. Punkte A-D ziehen: X = links/rechts, Y = vorne/hinten. **Shift-Ziehen oder Mausrad** ändert die Höhe Z (Punktgröße und Schatten), Doppelklick setzt Z auf 0.
 
 Rechts daneben, in der Karte **POSITION & ROOM**, stehen die genauen Werte X/Y/Z je Einheit (und `N` für die Noise): ziehen oder per Doppelklick eintippen, die Leiste unter der Zahl zeigt die Richtung von der Mitte aus. Darunter die Raum-Schalter (siehe unten).
 
@@ -111,7 +111,8 @@ Nur Einheiten, die im Algorithmus zum Ausgang gehören, haben eine hörbare Posi
 
 Im Raum platziert werden die **Echos**. Das Original bleibt in der Mitte. Mit `PLACE DRY` wandert der Anteil des Originals, der über diese Einheit läuft, **nur per Pegel** zur linken oder rechten Seite der Einheit, ohne Entfernung, Laufzeit, Luftfilter und Reflexionen. So bleibt das Original gleich laut und färbt sich nicht: Ein verzögerter oder gefilterter Teil würde sich mit dem Rest des Originals zu einem Kammfilter überlagern.
 
-- **Entfernung:** Bis zum 2. Ring bleibt eine Quelle nah und präsent (1 bis 1,4 m, höchstens -3 dB, kaum Luftdämpfung). Danach greift die Entfernung steil: äußerer Ring 4 m (-12 dB), Ecken ca. 5,6 m (-15 dB). Dazu Luftabsorption (Tiefpass), schmalere Stereobreite, optional frühe Reflexionen und Laufzeit. Gilt gleich für Lautsprecher und Kopfhörer.
+- **Entfernung (Stereo-Bühne):** Die vordere Hälfte bleibt präsent (Mitte ca. -1,8 dB), nach hinten bis 2,8 m (-9 dB), dazu weniger Höhen, schmaler und mehr frühe Reflexionen; X ändert den Pegel nicht.
+- **Entfernung (Binaural):** Bis zum 2. Ring bleibt eine Quelle nah und präsent (1 bis 1,4 m, höchstens -3 dB, kaum Luftdämpfung). Danach greift die Entfernung steil: äußerer Ring 4 m (-12 dB), Ecken ca. 5,6 m (-15 dB). Dazu Luftabsorption (Tiefpass), schmalere Stereobreite, optional frühe Reflexionen und Laufzeit.
 - **Stereo-Modus:** Equal-Power-Pan nach X, Laufzeitdifferenz bis 0,6 ms, Höhenverlust am abgewandten Ohr. **Hinten** klingt dezent dumpfer und leiser. Stereo kann hinten nicht wirklich abbilden: ohne Binaural klingt "hinten" eher wie "vorne, weiter weg und dunkler".
 - **Binaural (Kopfhörer):** Kugel-Kopf-Modell. Laufzeitdifferenz nach Woodworth (bis 0,66 ms), Kopfschatten nach Brown/Duda, Ohrmuschel-Dämpfung hinten, Höhenfärbung. Nur mit Kopfhörern sinnvoll, auf Lautsprechern klingt es seltsam.
 - Alle Positionen werden mit 50 ms geglättet, es gibt kein Zippern.
@@ -165,7 +166,7 @@ Gleiche Funktion = gleiches Symbol und gleiche Farbe: **Dry** hat ein neutrales 
 
 ## Parameterliste
 
-Je Einheit (Präfix `a_` bis `d_`, 39 Parameter) und global (9 Parameter). Alle sind automatisierbar und werden im Host-Zustand gespeichert.
+Je Einheit (Präfix `a_` bis `d_`, 59 Parameter), global 12 Parameter und im Expert-Bereich 61. Alle sind automatisierbar und werden im Host-Zustand gespeichert.
 
 ### Echo-Seite
 
@@ -175,7 +176,7 @@ Je Einheit (Präfix `a_` bis `d_`, 39 Parameter) und global (9 Parameter). Alle 
 | `mute` | Mute | an/aus | aus |
 | `solo` | Solo | an/aus | aus |
 | `sync` | Sync | an/aus | an |
-| `link` | R folgt L (in der UI: Knopf `LINK` leuchtet, wenn R frei ist) | an/aus | an (Single-Delay, Knopf aus) |
+| `link` | R folgt L (in der UI: Knopf `LINK` leuchtet bei Single-Delay) | an/aus | an (Single-Delay) |
 | `timeL`, `timeR` | Time L / R | 1-16000 ms (16 s = 8 Takte bei 120 BPM) | 250 / 375 / 500 / 125 ms (A-D) |
 | `divL`, `divR` | Division L / R | 1/32 bis 8 Takte inkl. triolisch und punktiert; ab einem Takt als Taktzahl (1, 1.5, 2 .. 8; 1.5 = punktiert); über 16 s bleibt die Zeit bei 16 s | A 1/8, B 1/8., C 1/4, D 1/16 |
 | `mode` | Channel Mode | Stereo, Ping Pong, Mid/Side | Stereo |
@@ -210,8 +211,11 @@ Je Einheit (Präfix `a_` bis `d_`, 39 Parameter) und global (9 Parameter). Alle 
 | `lfoDiv` | LFO Division | 1/32 bis 24 Takte (1, 1.5, 2, 3 .. 24) | 1/4 |
 | `phase` | LFO Phase R | 0-360 Grad | 0 |
 | `fPhase` | LFO Phase Filter (Filter-Modulation gegen Delay-Modulation verschieben) | 0-360 Grad | 0 |
-| `x4` | Mod x4 | an/aus (Delay-Modulation x4) | aus |
-| `dDepth` | Mod Delay Depth | 0-100 % (bis 10 ms, mit x4 bis 40 ms) | 0 |
+| `pattern`, `steps`, `glide`, `seed` | Schritt-Muster statt der LFO-Welle (Off, Stairs, Zigzag, Syncopated, Random; ein LFO-Zyklus = ein Muster), Stufen, Glide (0 = springt), Seed für Random (Taste NEW SEED) | 5 Stufen, 8/16, 0-100 %, 1-999 | Off, 16, 0, 1 |
+| `bellOn`, `bellHz`, `bellGain`, `bellQ` | Freies Bell-Band in der Feedback-Schleife (Doppelklick auf eine freie Stelle der Filterkurve; ziehen = Frequenz/Gain, Alt = Q, Doppelklick auf das Band entfernt es). Gleich für `gf_bell*` und `nz_bell*` | aus, 20 Hz-20 kHz, -18..+18 dB, Q 0,3-10 | aus, 1 kHz, 0 dB, 1 |
+| `tape` | Tape: Schreibweg (Eingang + Feedback) mit Band-Charakter (Pre-/De-Emphasis, weiche Sättigung, Head Bump, Höhenverlust); jede Wiederholung läuft erneut durchs Band | an/aus | aus |
+| `lfoAmt`, `envAmt` | LFO Factor, Env Factor (Faktor auf LFO- bzw. Hüllkurven-Anteil, wirkt auf Delay und Filter; ersetzt seit Zustandsversion 8 den Schalter `x4`) | 0,1-10 | 1 |
+| `dDepth` | Mod Delay Depth | 0-100 % (bis 10 ms, mal Faktor bis 100 ms) | 0 |
 | `fDepth` | Mod Filter Depth | 0-100 % (bis +/-2 Oktaven) | 0 |
 | `env` | Envelope Mix | 0-100 % (Eingangspegel statt/zusätzlich zum LFO) | 0 |
 
@@ -230,7 +234,9 @@ Je Einheit (Präfix `a_` bis `d_`, 39 Parameter) und global (9 Parameter). Alle 
 | `algo` | Algorithm | 10 Algorithmen | Parallel |
 | `gMix` | Global Dry/Wet (einziger Regler für das Original) | 0-100 % | 50 % |
 | `gOut` | Global Output | -24..+12 dB | 0 |
-| `gFb` | Feedback Scale | 0-100 % | 100 % |
+| `routeMode` | Routing-Modus: Audio (Einheiten speisen sich), Phase (die Echos der Quelle verschieben die Lesestelle der gespeisten Einheit, die den Eingang bekommt), Phase + Dry (ganzer Ausgang der Quelle inkl. Original) | 3 Stufen | Audio |
+| `routeDepth` | Phase Depth (Lese-Verschiebung bei Vollaussteuerung, quadratisch: 25 % = 0,6 ms, 100 % = 10 ms) | 0-100 % | 25 % |
+| `gFb` | Feedback Scale (über 100 % wachsen die Wiederholungen bis in die Sättigung) | 0-200 % | 100 % |
 | `doppler` | Doppler | 0-200 % | 100 % |
 | `binaural` | Binaural (Headphones) | an/aus | aus |
 | `distDelay` | Distance Delay | an/aus | aus |
@@ -248,6 +254,7 @@ Je Einheit (Präfix `a_` bis `d_`, 39 Parameter) und global (9 Parameter). Alle 
 | `gf_skipFirst` | Skip 1st echo (erstes Echo jeder Einheit nicht filtern) | an/aus | aus |
 | `gf_lfoOn`, `gf_wave`, `gf_rate`, `gf_sync`, `gf_div` | LFO an, Form, Rate (0,01-20 Hz), Sync, Division | | an, Sine, 0,5 Hz, aus, 1/4 |
 | `gf_depth`, `gf_phase` | Modulationstiefe (bis +/-2 Oktaven), Phase R (rechts gegen links) | 0-100 %, 0-360 Grad | 0, 0 |
+| `gf_env` | Envelope Mix: Modulationsquelle 0 = LFO, 100 % = Lautstärke des Eingangs (lauter = Filter höher) | 0-100 % | 0 |
 | `nz_on` | Noise an | an/aus | aus |
 | `nz_level`, `nz_color`, `nz_crackle`, `nz_width` | Pegel, Farbe (0 braun, 0,5 rosa, 1 weiß), Knistern, Breite | 0-100 % | 30 %, 50 %, 0, 100 % |
 | `nz_into` | Into echoes (0 direkt, 100 % nur in die Delays) | 0-100 % | 0 |
@@ -255,6 +262,7 @@ Je Einheit (Präfix `a_` bis `d_`, 39 Parameter) und global (9 Parameter). Alle 
 | `nz_lfoOn`, `nz_wave`, `nz_rate`, `nz_sync`, `nz_div` | Noise-LFO | wie oben | an, Sine, 0,5 Hz, aus, 1/4 |
 | `nz_depthF`, `nz_depthL`, `nz_phase`, `nz_env` | Filter-Tiefe, Pegel-Tiefe, Phase (Pegel gegen Filter), Hüllkurve | 0-100 %, 0-360 Grad | 0 |
 | `nz_posX`, `nz_posY`, `nz_posZ` | Position der Noise | -1..+1 | 0 / 0,2 / 0 |
+| `nz_panAmt`, `nz_panRate`, `nz_panSync`, `nz_panDiv` | Auto-Pan der Noise (eigener Sinus-LFO): Amount (0 = aus, 100 % = ganz links bis ganz rechts), Frequenz, Sync, Notenwert | 0-100 %, 0,01-20 Hz | 0, 0,5 Hz, aus, 1/4 |
 | `dk_on` | Ducking an | an/aus | aus |
 | `dk_threshold`, `dk_amount` | Threshold, Absenkung | -60..0 dB, 0-40 dB | -30 dB, 12 dB |
 | `dk_attack`, `dk_release` | Attack, Release | 0,1-200 ms, 20-3000 ms | 10 ms, 400 ms |
@@ -269,4 +277,4 @@ Je Einheit (Präfix `a_` bis `d_`, 39 Parameter) und global (9 Parameter). Alle 
 - `Source/StateMigration.h`: Zustandsversion (Attribut `qeVersion`) und Umrechnung älterer Zustände beim Laden.
 - UI: `PluginEditor`, `UnitPanel`, `Widgets.h` (Echo-Anzeige, Modulationsanzeige, Chips), `PadComponent.h`, `RoutingSelector.h`, `UiCommon.h`, `UiExtras.h` (Tooltips, Pegel).
 - Audio-Thread: keine Allokation, keine Locks, kein Logging; Denormals werden abgefangen (die Engine setzt FTZ/DAZ selbst); NaN/Inf vom Host wird zu Stille; alle Parameter geglättet. Ausgang unabhängig von der Blockgröße des Hosts (Steuerraster an der absoluten Sample-Position). Tail-Länge wird aus Zeiten, Feedback und Filtern berechnet (unendlich bei Dauerschwingung, Freeze oder Noise). Latenz 0. Mono- und Stereo-Bus (Mono läuft intern stereo und wird heruntergemischt). Tempo-Sync über den Host-Playhead (Standard 120 BPM ohne Host).
-- CPU (Thread-CPU-Zeit, `QuadEchoTests --harness bench`): Standardeinstellungen etwa 2,3 % der Blockzeit bei 48 kHz und 6 % bei 192 kHz (Block 32); Worst Case (alles an) etwa 7 % bzw. 18 %. Details, Messmethode und DSP-Audit: `SPEC.md`, `AUDIT.md`.
+- CPU (Thread-CPU-Zeit, `QuadEchoTests --harness bench`): Standardeinstellungen etwa 2,3 % der Blockzeit bei 48 kHz und 6 % bei 192 kHz (Block 32); Worst Case (alles an) etwa 7 % bzw. 18 %.

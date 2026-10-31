@@ -136,7 +136,7 @@ std::vector<Case> baselineCases (double sr)
         cs.push_back ({ "feat_lfo_wave" + std::to_string (w), single ([w] (EchoSettings& c) {
                             c.wave = w; c.delayDepth = 0.5f; c.filterDepth = 0.5f; c.lpOn = true; c.lpHz = 2000.0f; c.res = 0.5f;
                             c.rateHz = 3.0f; c.phaseDeg = 90.0f; c.filterPhaseDeg = 180.0f; }), {} });
-    cs.push_back ({ "feat_lfo_sync_x4", single ([] (EchoSettings& c) { c.lfoSync = true; c.lfoDiv = 5; c.x4 = true; c.delayDepth = 0.3f; }), {}, 123.0 });
+    cs.push_back ({ "feat_lfo_sync_x4", single ([] (EchoSettings& c) { c.lfoSync = true; c.lfoDiv = 5; c.lfoAmt = c.envAmt = 4.0f; c.delayDepth = 0.3f; }), {}, 123.0 });
     cs.push_back ({ "feat_sync_times", single ([] (EchoSettings& c) { c.sync = true; c.link = false; c.divL = 6; c.syncModeR = Sync16th; c.sixR = 3; }), {}, 123.0 });
     cs.push_back ({ "feat_envmix", single ([] (EchoSettings& c) { c.envMix = 0.7f; c.delayDepth = 0.4f; c.filterDepth = 0.6f; c.lpOn = true; c.lpHz = 3000.0f; }), {} });
     cs.push_back ({ "feat_mix0", withEngine (algoBase (3, Stereo), [] (EngineSettings& s) { s.globalMix = 0.0f; }), {} });
@@ -327,7 +327,7 @@ juce::var echoToVar (const EchoSettings& c)
     o->setProperty ("outDb", c.outDb); o->setProperty ("width", c.width);
     o->setProperty ("wave", c.wave); o->setProperty ("rateHz", c.rateHz);
     o->setProperty ("lfoSync", c.lfoSync); o->setProperty ("lfoDiv", c.lfoDiv);
-    o->setProperty ("phaseDeg", c.phaseDeg); o->setProperty ("x4", c.x4);
+    o->setProperty ("phaseDeg", c.phaseDeg); o->setProperty ("lfoAmt", c.lfoAmt); o->setProperty ("envAmt", c.envAmt);
     o->setProperty ("delayDepth", c.delayDepth); o->setProperty ("filterDepth", c.filterDepth); o->setProperty ("envMix", c.envMix);
     o->setProperty ("lfoOn", c.lfoOn); o->setProperty ("filterPhaseDeg", c.filterPhaseDeg); o->setProperty ("freeze", c.freeze);
     return juce::var (o);
@@ -368,7 +368,7 @@ int refDump (const juce::File& dir)
         { "r09_fade",      [] (EchoSettings& c) { c.transition = Fade;    c.timeL = 100.0f; c.feedback = 0.4f; }, 1.5, 0.25, 350.0f },
         { "r10_jump",      [] (EchoSettings& c) { c.transition = Jump;    c.timeL = 100.0f; c.feedback = 0.4f; }, 1.5, 0.25, 350.0f },
         { "r11_fbinvert",  [] (EchoSettings& c) { c.timeL = 77.7f; c.feedback = 0.7f; c.fbInvert = true; c.outDb = -3.0f; c.mix = 0.8f; } },
-        { "r12_tri_x4",    [] (EchoSettings& c) { c.timeL = 150.0f; c.feedback = 0.5f; c.wave = Triangle; c.x4 = true; c.delayDepth = 0.2f; c.rateHz = 1.1f; } },
+        { "r12_tri_x4",    [] (EchoSettings& c) { c.timeL = 150.0f; c.feedback = 0.5f; c.wave = Triangle; c.lfoAmt = c.envAmt = 4.0f; c.delayDepth = 0.2f; c.rateHz = 1.1f; } },
         { "r13_random",    [] (EchoSettings& c) { c.timeL = 150.0f; c.feedback = 0.5f; c.wave = SmoothRandom; c.delayDepth = 0.3f; c.rateHz = 4.0f; } },
         { "r14_filters_stable", [] (EchoSettings& c) { c.timeL = 100.0f; c.feedback = 0.5f; c.hpOn = c.lpOn = true; c.hpHz = 150.0f; c.hpRes = 0.2f;
                                                        c.lpHz = 2500.0f; c.res = 0.3f; c.lpBoost = 3.0f; } },

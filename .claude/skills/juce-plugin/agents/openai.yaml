@@ -1,4 +1,0 @@
-interface:
-  display_name: "JUCE Plugin"
-  short_description: "JUCE audio plugin development"
-  default_prompt: "Use $juce-plugin to build a JUCE audio plugin with CMake."

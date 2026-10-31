@@ -1,11 +1,11 @@
-// Messungen fuer AUDIT.md (Phase 1). Aufruf: QuadEchoTests --harness audit <name|all> [ausgabeordner]
+// Messungen fuer das DSP-Audit (Phase 1). Aufruf: QuadEchoTests --harness audit <name|all> [ausgabeordner]
 //   blocksize  Blockgroessen 1/32/64/441/4096/wechselnd gegen 512, alle Baseline-Faelle, 48 und 192 kHz
 //   reset      dieselbe Instanz nach reset() bzw. prepare() gegen den ersten Render
 //   numerics   Delay-Zeit nach Repitch (Phasenmessung) und Aufloesung des float-Index
 //   robust     NaN/Inf/1e30 im Eingang, Denormals ohne FTZ, extreme Automation, Ausklingzeit
 //   rtalloc    Speicheranforderungen waehrend process() (zaehlender operator new)
 //   dumps      Rohdaten fuer tests/ref/audit_analysis.py (Schleifenverstaerkung, Hermite, Aliasing)
-// Die Messungen pruefen nichts (kein Exit-Code), sie liefern Zahlen. Grenzwerte stehen in SPEC.md.
+// Die Messungen pruefen nichts (kein Exit-Code), sie liefern Zahlen. 
 #include "HarnessCommon.h"
 #include <atomic>
 #include <complex>
@@ -266,12 +266,12 @@ void auditRobust()
                 c.link = rnd.nextBool(); c.mode = rnd.nextInt (3); c.transition = rnd.nextInt (3); c.inGainDb = ext (-24.0f, 24.0f); c.inGainOnDry = rnd.nextBool();
                 c.hpOn = rnd.nextBool(); c.lpOn = rnd.nextBool(); c.hpHz = ext (20.0f, 8000.0f); c.lpHz = ext (200.0f, 20000.0f);
                 c.res = ext (0.0f, 1.0f); c.hpRes = ext (0.0f, 1.0f); c.hpBoost = ext (0.0f, 18.0f); c.lpBoost = ext (0.0f, 18.0f);
-                c.mix = ext (0.0f, 1.0f); c.outDb = ext (-24.0f, 12.0f); c.width = ext (0.0f, 2.0f); c.delayDepth = ext (0.0f, 1.0f); c.x4 = rnd.nextBool();
+                c.mix = ext (0.0f, 1.0f); c.outDb = ext (-24.0f, 12.0f); c.width = ext (0.0f, 2.0f); c.delayDepth = ext (0.0f, 1.0f); c.lfoAmt = ext (kMinModFactor, kMaxModFactor); c.envAmt = ext (kMinModFactor, kMaxModFactor);
                 c.filterDepth = ext (0.0f, 1.0f); c.envMix = ext (0.0f, 1.0f); c.rateHz = ext (0.01f, 20.0f); c.wave = rnd.nextInt (kNumWaves); c.freeze = rnd.nextInt (8) == 0;
                 c.offset = ext (-50.0f, 50.0f); c.offsetL = ext (-50.0f, 50.0f);
             }
             s.algorithm = rnd.nextInt (kNumAlgorithms); s.globalMix = ext (0.0f, 1.0f); s.globalOutDb = ext (-24.0f, 12.0f);
-            s.feedbackScale = ext (0.0f, 1.0f); s.binaural = rnd.nextBool(); s.distanceDelay = rnd.nextBool(); s.doppler = ext (0.0f, 2.0f);
+            s.feedbackScale = ext (0.0f, 2.0f); s.binaural = rnd.nextBool(); s.distanceDelay = rnd.nextBool(); s.doppler = ext (0.0f, 2.0f);
             for (auto& p : s.pos) p = { ext (-1.0f, 1.0f), ext (-1.0f, 1.0f), ext (-1.0f, 1.0f) };
             s.gfilter.hpOn = rnd.nextBool(); s.gfilter.lpOn = rnd.nextBool(); s.gfilter.res = ext (0.0f, 1.0f); s.gfilter.lpBoost = ext (0.0f, 18.0f); s.gfilter.depth = ext (0.0f, 1.0f);
             s.noise.on = rnd.nextBool(); s.noise.level = ext (0.0f, 1.0f); s.noise.into = ext (0.0f, 1.0f);

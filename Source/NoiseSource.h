@@ -19,6 +19,13 @@ public:
     void process (float* outL, float* outR, int n, const NoiseSettings& s, double bpm,
                   const float* inL, const float* inR);
 
+    // Fuer die UI (lockfrei): LFO und Auto-Pan (Position in Zyklen, Rate in Hz), Huellkurve 0..1
+    double getLfoPos() const { return posPub.load (std::memory_order_relaxed); }
+    float getLfoRateHz() const { return ratePub.load (std::memory_order_relaxed); }
+    float getEnvValue() const { return envPub.load (std::memory_order_relaxed); }
+    double getPanPos() const { return panPosPub.load (std::memory_order_relaxed); }
+    float getPanRateHz() const { return panRatePub.load (std::memory_order_relaxed); }
+
 private:
     struct Color { float p0 = 0, p1 = 0, p2 = 0, br = 0; };
     float colored (Color& c, float w, float col) const;
@@ -33,9 +40,16 @@ private:
     juce::dsp::FirstOrderTPTFilter<float> hp1, lp1;        // ... plus 1. Ordnung = 18 dB/Oktave
     juce::SmoothedValue<float> levelSm;
     double phase = 0.0;   // LFO-Position in Zyklen, fortlaufend
+    double panPhase = 0.0;   // Auto-Pan-Position in Zyklen, fortlaufend
+    juce::SmoothedValue<float> panAmtSm;
+    std::atomic<double> posPub { 0.0 }, panPosPub { 0.0 };
+    std::atomic<float> ratePub { 0.5f }, envPub { 0.0f }, panRatePub { 0.5f };
     float qSm[2] = { -1.0f, -1.0f };   // geglaettete Guete HP, LP (-1 = noch nicht gesetzt)
     float boostSm[2] = { 0.0f, 0.0f };  // geglaetteter Boost HP, LP (dB)
     PeakEq peakHp, peakLp;             // Glocke an der Grenzfrequenz
+    PeakEq peakBell;                   // freies Bell-Band
+    float bellSm = 0.0f;
+    bool frameBell = false;
     float fModS = 0.0f, env = 0.0f, envMapped = 0.0f, envAtk = 0.01f, envRel = 0.001f;
     bool initialised = false;
     int framePos = 0;   // Position im 16er-Teilblock (Steuerraster), ueber Aufrufe hinweg

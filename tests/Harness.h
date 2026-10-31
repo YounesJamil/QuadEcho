@@ -1,4 +1,4 @@
-// Referenz-Harness fuer das DSP-Audit (SPEC.md, AUDIT.md). Ohne Plugin-Host, im Test-Binary.
+// Referenz-Harness fuer das DSP-Audit. Ohne Plugin-Host, im Test-Binary.
 //   QuadEchoTests --harness baseline-write <ordner> [manifest]   float32-WAVs + manifest.tsv (Baseline)
 //   QuadEchoTests --harness baseline-check <ordner>              neu rendern, mit den WAVs in <ordner> vergleichen
 //   QuadEchoTests --harness manifest-check <manifest>            neu rendern, nur Pruefsummen vergleichen

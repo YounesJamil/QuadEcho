@@ -10,19 +10,20 @@ enum P
     pOn, pMute, pSolo, pSync, pLink, pTimeL, pTimeR, pDivL, pDivR, pMode, pOffset,
     pFb, pFbInv, pInGain, pInDry, pPosDry, pHpOn, pLpOn, pHp, pLp, pRes, pTrans,
     pMix, pOut, pWidth,
-    pLfoOn, pWave, pRate, pLfoSync, pLfoDiv, pPhase, pFPhase, pX4, pDDepth, pFDepth, pEnv,
-    pPosX, pPosY, pPosZ, pFreeze, pSyncMode, pSixL, pSixR, pOffsetL, pHpRes, pSyncModeR, pHpBoost, pLpBoost, pFbStable,
+    pLfoOn, pWave, pRate, pLfoSync, pLfoDiv, pPhase, pFPhase, pDDepth, pFDepth, pEnv,
+    pPosX, pPosY, pPosZ, pFreeze, pSyncMode, pSixL, pSixR, pOffsetL, pHpRes, pSyncModeR, pHpBoost, pLpBoost, pFbStable, pLfoAmt, pEnvAmt, pTape, pBellOn, pBellHz, pBellGain, pBellQ, pPattern, pSteps, pGlide, pSeed,
     pCount
 };
 
 // pMix ("mix") ist seit Zustandsversion 2 der Echo-Pegel der Einheit (vorher Dry/Wet je Einheit).
 // pRes ("res") ist seit Version 4 die LP-Resonanz, pHpRes die HP-Resonanz; pOffset ("offset") wirkt auf R.
+// pLfoAmt/pEnvAmt ersetzen seit Version 8 den Schalter "x4".
 inline const char* const kParamNames[pCount] = {
     "on", "mute", "solo", "sync", "link", "timeL", "timeR", "divL", "divR", "mode", "offset",
     "fb", "fbInv", "inGain", "inDry", "posDry", "hpOn", "lpOn", "hp", "lp", "res", "trans",
     "mix", "out", "width",
-    "lfoOn", "wave", "rate", "lfoSync", "lfoDiv", "phase", "fPhase", "x4", "dDepth", "fDepth", "env",
-    "posX", "posY", "posZ", "freeze", "syncMode", "sixL", "sixR", "offsetL", "hpRes", "syncModeR", "hpBoost", "lpBoost", "fbStable" };
+    "lfoOn", "wave", "rate", "lfoSync", "lfoDiv", "phase", "fPhase", "dDepth", "fDepth", "env",
+    "posX", "posY", "posZ", "freeze", "syncMode", "sixL", "sixR", "offsetL", "hpRes", "syncModeR", "hpBoost", "lpBoost", "fbStable", "lfoAmt", "envAmt", "tape", "bellOn", "bellHz", "bellGain", "bellQ", "pattern", "steps", "glide", "seed" };
 
 inline const char* const kUnitLetters[kNumUnits] = { "a", "b", "c", "d" };
 
@@ -40,6 +41,9 @@ enum G
     dkOn, dkThreshold, dkAmount, dkAttack, dkRelease,
     gfHpRes, nzHpRes,
     gfHpBoost, gfLpBoost, nzHpBoost, nzLpBoost,
+    gfEnv,
+    nzPanAmt, nzPanRate, nzPanSync, nzPanDiv,
+    gfBellOn, gfBellHz, gfBellGain, gfBellQ, nzBellOn, nzBellHz, nzBellGain, nzBellQ,
     gCount
 };
 
@@ -49,7 +53,10 @@ inline const char* const kGlobalIds[gCount] = {
     "nz_lfoOn", "nz_wave", "nz_rate", "nz_sync", "nz_div", "nz_depthF", "nz_depthL", "nz_phase", "nz_env", "nz_posX", "nz_posY", "nz_posZ",
     "dk_on", "dk_threshold", "dk_amount", "dk_attack", "dk_release",
     "gf_hpRes", "nz_hpRes",
-    "gf_hpBoost", "gf_lpBoost", "nz_hpBoost", "nz_lpBoost" };
+    "gf_hpBoost", "gf_lpBoost", "nz_hpBoost", "nz_lpBoost",
+    "gf_env",
+    "nz_panAmt", "nz_panRate", "nz_panSync", "nz_panDiv",
+    "gf_bellOn", "gf_bellHz", "gf_bellGain", "gf_bellQ", "nz_bellOn", "nz_bellHz", "nz_bellGain", "nz_bellQ" };
 
 // Globale Parameter
 inline const char* const kIdAlgo = "algo";
@@ -62,6 +69,8 @@ inline const char* const kIdDoppler = "doppler";
 inline const char* const kIdGlobalFb = "gFb";
 inline const char* const kIdLimiter = "limiter";
 inline const char* const kIdLimitDry = "limitDry";
+inline const char* const kIdRouteMode = "routeMode";
+inline const char* const kIdRouteDepth = "routeDepth";
 
 juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
 
@@ -85,6 +94,8 @@ private:
     std::atomic<float>* gFb = nullptr;
     std::atomic<float>* limiter = nullptr;
     std::atomic<float>* limitDry = nullptr;
+    std::atomic<float>* routeMode = nullptr;
+    std::atomic<float>* routeDepth = nullptr;
     std::array<std::atomic<float>*, gCount> glob {};
 };
 } // namespace qe

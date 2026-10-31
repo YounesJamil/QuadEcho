@@ -9,13 +9,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include(FetchContent)
-# Lokal unter Windows liegt JUCE auf Q: (schneller als Y:), sonst (Mac, CI) im Build-Ordner
-if(WIN32 AND EXISTS "Q:/")
-    set(QUADECHO_DEPS_DEFAULT "Q:/QuadEcho/deps")
-else()
-    set(QUADECHO_DEPS_DEFAULT "${CMAKE_BINARY_DIR}/_deps")
-endif()
-set(QUADECHO_DEPS_DIR "${QUADECHO_DEPS_DEFAULT}" CACHE PATH "Ablage fuer JUCE")
+# Ablage fuer JUCE, Standard im Build-Ordner (mit -DQUADECHO_DEPS_DIR=... einstellbar)
+set(QUADECHO_DEPS_DIR "${CMAKE_BINARY_DIR}/_deps" CACHE PATH "Ablage fuer JUCE")
 set(FETCHCONTENT_BASE_DIR ${QUADECHO_DEPS_DIR})
 FetchContent_Declare(JUCE
     GIT_REPOSITORY https://github.com/juce-framework/JUCE.git

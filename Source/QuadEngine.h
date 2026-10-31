@@ -37,7 +37,11 @@ public:
     float takeMasterPeak() { return masterPeak.exchange (0.0f); }
     // Groesste Ducking-Absenkung in dB seit dem letzten Abruf (setzt zurueck)
     float takeDuckReduction() { return duckReduction.exchange (0.0f); }
+    // Spitzenpegel des Eingangs seit dem letzten Abruf (setzt zurueck), fuer die Threshold-Anzeige
+    float takeInputPeak() { return inputPeak.exchange (0.0f); }
     const DelayUnit& unit (int u) const { return units[(size_t) u]; }
+    const GlobalFilter& globalFilter() const { return gfilter; }
+    const NoiseSource& noiseSource() const { return noise; }
 
 private:
     static constexpr int kChunk = 256;
@@ -60,15 +64,15 @@ private:
     std::array<bool, kNumUnits> spatialLive { { false, false, false, false } };
     bool noiseSpatialLive = false;
     std::array<Block, kNumUnits> outs, origs, firsts, spOut, spDry;
-    Block ext, src, origSrc, tmp, origTmp, firstTmp, wetM, noiseRaw, noiseOut;
+    Block ext, src, origSrc, tmp, origTmp, firstTmp, wetM, noiseRaw, noiseOut, phaseMod;
     std::array<std::atomic<float>, kNumUnits> unitPeaks;
-    std::atomic<float> masterPeak { 0.0f }, duckReduction { 0.0f };
+    std::atomic<float> masterPeak { 0.0f }, duckReduction { 0.0f }, inputPeak { 0.0f };
     float duckEnv = 0.0f, duckDb = 0.0f, duckEnvRel = 0.001f;
 
-    int activeAlgo = 0;
+    int activeAlgo = 0, activeRoute = RouteAudio;
     enum class Gate { Idle, Down, Up } gateState = Gate::Idle;
     float gate = 1.0f;
-    juce::SmoothedValue<float> mixSm, outSm;
+    juce::SmoothedValue<float> mixSm, outSm, routeDepthSm;
     bool initialised = false;
     bool poisoned = false;   // ein Ausgangs-Sample war nicht endlich: am Ende des Chunks alles zuruecksetzen
 };

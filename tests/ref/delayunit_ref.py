@@ -388,7 +388,7 @@ class DelayUnitModel:
         phase_off = s["phaseDeg"] / 360.0
         f_phase_off = s["filterPhaseDeg"] / 360.0
         gate = 1.0 if s["lfoOn"] else 0.0
-        depth = self.fi(s["delayDepth"] * 0.010 * (4.0 if s["x4"] else 1.0) * sr)
+        depth = self.fi(s["delayDepth"] * 0.010 * sr)
         fb_sign = -1.0 if s["fbInvert"] else 1.0
         q_lp_t = 0.7071 + s["res"] * s["res"] * 4.0
         q_hp_t = 0.7071 + s["hpRes"] * s["hpRes"] * 4.0
@@ -423,7 +423,7 @@ class DelayUnitModel:
             self.boost_sm[1] += (s["lpBoost"] - self.boost_sm[1]) * self.q_coef
             hp_peak = hp_on and self.boost_sm[0] > 0.05
             lp_peak = lp_on and self.boost_sm[1] > 0.05
-            mod_f = clamp(self.f_mod_sm, -1.0, 1.0)
+            mod_f = clamp(self.f_mod_sm, -10.0, 10.0)
             fmul = 2.0 ** (mod_f * f_depth * 2.0)
             max_f = 0.45 * sr
             if hp_on:
@@ -459,9 +459,11 @@ class DelayUnitModel:
                 lfo1 = gate * fm(lfo_wave(wave, lp_ + phase_off))
                 lfo_f = gate * fm(lfo_wave(wave, lp_ + f_phase_off))
                 self.lfo_pos = lp_ + lfo_inc
-                m0 = lfo0 * (1.0 - env_mix) + env_mapped * env_mix
-                m1 = lfo1 * (1.0 - env_mix) + env_mapped * env_mix
-                mf = lfo_f * (1.0 - env_mix) + env_mapped * env_mix
+                lfo_part = (1.0 - env_mix) * s["lfoAmt"]
+                env_part = env_mapped * env_mix * s["envAmt"]
+                m0 = lfo0 * lfo_part + env_part
+                m1 = lfo1 * lfo_part + env_part
+                mf = lfo_f * lfo_part + env_part
                 m0, m1, mf = fm(m0), fm(m1), fm(mf)
                 self.f_mod_sm = fm(self.f_mod_sm + fm(fm(mf - self.f_mod_sm) * self.mod_coef))
                 self.mod_sm[0] = fm(self.mod_sm[0] + fm(fm(m0 - self.mod_sm[0]) * self.mod_coef))

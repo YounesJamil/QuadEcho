@@ -13,7 +13,7 @@ inline juce::String tooltipForUnitParam (int p)
         case pMute:    return "Silences this unit everywhere: at the output and for following units.";
         case pSolo:    return "Hear only the soloed unit(s), at their position.";
         case pSync:    return "Delay times follow the host tempo (note values).";
-        case pLink:    return "Off (default): single delay, the right time follows the left (greyed out). On: the right side is free, separate times for left and right.";
+        case pLink:    return "Lit (default): single delay, the right time follows the left (greyed out). Off: the right side is free, separate times for left and right.";
         case pTimeL:
         case pTimeR:   return "Delay time in milliseconds (max. 4 s).";
         case pDivL:
@@ -47,8 +47,10 @@ inline juce::String tooltipForUnitParam (int p)
         case pLfoDiv:  return "LFO rate as a note value.";
         case pPhase:   return "Phase offset of the right-channel LFO (stereo movement).";
         case pFPhase:  return "Phase offset of the filter modulation relative to the delay modulation (90 deg = the filter moves a quarter cycle later).";
-        case pX4:      return "Multiplies the delay-time modulation by 4.";
-        case pDDepth:  return "How strongly the modulation shifts the delay time (up to 10 ms, x4: 40 ms).";
+        case pTape:    return "Tape character: everything written to the delay (input and feedback) runs through a tape stage. Highs saturate earlier, each repeat gets warmer and darker. Input gain above 0 dB drives the tape harder.";
+        case pLfoAmt:  return "Multiplies the LFO part of the modulation (0.1 to 10, default 1): on delay time and filter.";
+        case pEnvAmt:  return "Multiplies the envelope part of the modulation (0.1 to 10, default 1): on delay time and filter.";
+        case pDDepth:  return "How strongly the modulation shifts the delay time (up to 10 ms, times the LFO / ENV factor: up to 100 ms).";
         case pFDepth:  return "How strongly the modulation moves the filter cutoff (up to +-2 octaves). Needs HP or LP on.";
         case pEnv:     return "Modulation source: 0% = LFO only, 100% = loudness of this unit's input signal (envelope follower). Works only with Delay depth or Filter depth above 0.";
         default:       return {};
@@ -59,7 +61,7 @@ inline juce::String tooltipForGlobal (const juce::String& id)
 {
     if (id == qe::kIdGlobalMix)  return "The only control for the original (equal power): 0% = original only, 50% = equal, 100% = echoes only (e.g. on a send).";
     if (id == qe::kIdGlobalOut)  return "Master output level, behind the routing.";
-    if (id == qe::kIdGlobalFb)   return "Scales the feedback of all four units together (100% = as set in the units). Pull down to let the echoes die out.";
+    if (id == qe::kIdGlobalFb)   return "Scales the feedback of all four units together (100% = as set in the units, up to 200%). Pull down to let the echoes die out; above 100% the repeats grow into saturation.";
     if (id == qe::kIdDoppler)    return "Pitch change when you move a point. Only works with DIST. DELAY on. 0 = none, 100% = realistic, 200% = exaggerated.";
     if (id == qe::kIdBinaural)   return "Headphone mode: head model with front/back and up/down cues. Only for headphones.";
     if (id == qe::kIdDistDelay)  return "Adds travel time (distance / 343 m/s) to placed units. Strengthens distance, but shifts echoes slightly off the tempo grid.";
@@ -86,6 +88,7 @@ inline juce::String tooltipForExpert (const juce::String& id)
     if (is (gfSync) || is (nzSync)) return "LFO rate follows the host tempo.";
     if (is (gfDiv) || is (nzDiv)) return "LFO rate as a note value.";
     if (is (gfDepth)) return "How strongly the LFO moves the global filter cutoff (up to +-2 octaves).";
+    if (is (gfEnv)) return "Modulation source: 0% = LFO, 100% = loudness of the input signal (louder playing moves the filter up). Works with Depth.";
     if (is (gfPhase)) return "Offsets the movement of the right filter against the left one (stereo motion). 0 = both sides move together.";
     if (is (nzPhase)) return "Phase offset of the level modulation against the filter modulation.";
     if (is (nzOn)) return "Noise source on/off (tape hiss and crackle).";
@@ -96,10 +99,13 @@ inline juce::String tooltipForExpert (const juce::String& id)
     if (is (nzInto)) return "0 = noise goes straight to the output. 100% = noise goes into the delay units instead, so it is echoed and saturated in the feedback loop.";
     if (is (nzDepthF)) return "How strongly the modulation moves the noise filter cutoff (up to +-2 octaves).";
     if (is (nzDepthL)) return "How strongly the modulation pulses the noise level.";
+    if (is (nzPanAmt)) return "Auto-pan of the noise (sine): 0 = off, 100% = all the way from left to right.";
+    if (is (nzPanRate) || is (nzPanDiv)) return "Speed of the auto-pan (own LFO, independent of the noise modulation).";
+    if (is (nzPanSync)) return "Auto-pan in time with the host tempo (note value instead of Hz).";
     if (is (nzEnv)) return "Modulation source: 0% = LFO, 100% = loudness of the input signal (the noise follows your playing).";
     if (is (nzPosX) || is (nzPosY) || is (nzPosZ)) return "Position of the noise in the room.";
     if (is (dkOn)) return "Ducking on/off: the echoes get quieter while you play and come back in the pauses. The original and the noise are not ducked.";
-    if (is (dkThreshold)) return "Input level from which the echoes are lowered (soft knee, +-3 dB).";
+    if (is (dkThreshold)) return "Input level from which the echoes are lowered (soft knee, +-3 dB). The INPUT bar on the right shows the current input level, the white mark the threshold.";
     if (is (dkAmount)) return "How far the echoes are lowered while you play.";
     if (is (dkAttack)) return "How fast the echoes dip when you start playing.";
     if (is (dkRelease)) return "How fast the echoes come back after you stop.";

@@ -5,6 +5,8 @@ namespace qe
 void GlobalFilter::prepare (double sampleRate)
 {
     sr = sampleRate;
+    envAtk = 1.0f - std::exp (-1.0f / (0.005f * (float) sr));
+    envRel = 1.0f - std::exp (-1.0f / (0.15f * (float) sr));
     juce::dsp::ProcessSpec spec { sampleRate, 512, 1 };
     for (auto& i : insts)
         for (int c = 0; c < 2; ++c)
@@ -24,8 +26,10 @@ void GlobalFilter::reset()
     for (int i = 0; i < kInstances; ++i) resetInstance (i);
     phase = 0.0;
     modS = { { 0.0f, 0.0f } };
+    env = 0.0f;
     qS = { { -1.0f, -1.0f } };
     boostS = { { 0.0f, 0.0f } };
+    bellS = 0.0f;
     cur = GlobalFilterSettings();
     for (auto& f : fmBlocks) f.fill (1.0f);
     numSegs = 0;
@@ -42,11 +46,22 @@ void GlobalFilter::resetInstance (int inst)
     for (auto& f : i.lp1) f.reset();
     for (auto& f : i.peakHp) f.reset();
     for (auto& f : i.peakLp) f.reset();
+    for (auto& f : i.peakBell) f.reset();
 }
 
-void GlobalFilter::beginChunk (const GlobalFilterSettings& s, double bpm, int n, double ppq)
+void GlobalFilter::beginChunk (const GlobalFilterSettings& s, double bpm, int n, double ppq, const float* inL, const float* inR)
 {
     cur = s;
+    // Huellkurve laeuft pro Sample, ihr Wert am Anfang jedes 16er-Blocks steuert diesen Block (blockgroessen-unabhaengig)
+    auto follow = [&] (int from, int len)
+    {
+        if (inL == nullptr) return;
+        for (int i = from; i < from + len; ++i)
+        {
+            const float a = std::max (std::abs (inL[i]), std::abs (inR[i]));
+            env += (a > env ? envAtk : envRel) * (a - env);
+        }
+    };
     const double hz = s.lfoSync ? (bpm / 60.0) / divBeatsOf (s.lfoDiv) : (double) s.rateHz;
     if (s.lfoSync && ppq >= 0.0)   // phase gilt fuer den Anfang des naechsten 16er-Blocks: dort ausrichten
     {
@@ -68,10 +83,12 @@ void GlobalFilter::beginChunk (const GlobalFilterSettings& s, double bpm, int n,
             qBlocks[(size_t) c][0] = qBlocks[(size_t) c][(size_t) last];
             boostBlocks[(size_t) c][0] = boostBlocks[(size_t) c][(size_t) last];
         }
+        bellBlocks[0] = bellBlocks[(size_t) last];
         segStart[0] = 0;
         segLen[0] = std::min (16 - framePos, n);
         numSegs = 1;
         pos = segLen[0];
+        follow (0, pos);
     }
     for (; pos < n && numSegs < (int) segStart.size(); pos += 16)
     {
@@ -86,21 +103,29 @@ void GlobalFilter::beginChunk (const GlobalFilterSettings& s, double bpm, int n,
             boostS[(size_t) k] += (boostTarget - boostS[(size_t) k]) * qCoef;
             boostBlocks[(size_t) k][(size_t) b] = boostS[(size_t) k];
         }
+        bellS += ((s.bellOn ? s.bellGain : 0.0f) - bellS) * qCoef;
+        bellBlocks[(size_t) b] = bellS;
         phase += hz / sr * 16.0;
+        const float envMapped = std::min (std::max ((20.0f * std::log10 (env + 1e-6f) + 48.0f) / 48.0f, 0.0f), 1.0f);
+        follow (pos, segLen[(size_t) b]);
         for (int c = 0; c < 2; ++c)
         {
-            const float target = s.lfoOn ? lfoWave (s.wave, phase + (c == 1 ? (double) offR : 0.0)) : 0.0f;
+            const float lfo = s.lfoOn ? lfoWave (s.wave, phase + (c == 1 ? (double) offR : 0.0)) : 0.0f;
+            const float target = s.envMix > 0.0f ? lfo * (1.0f - s.envMix) + envMapped * s.envMix : lfo;
             modS[(size_t) c] += (target - modS[(size_t) c]) * 0.25f;
             fmBlocks[(size_t) c][(size_t) b] = std::exp2 (modS[(size_t) c] * s.depth * 2.0f);
         }
     }
     prevLastSeg = numSegs - 1;
     framePos = (framePos + n) % 16;
+    posPub.store (phase, std::memory_order_relaxed);
+    ratePub.store ((float) hz, std::memory_order_relaxed);
+    envPub.store (std::min (std::max ((20.0f * std::log10 (env + 1e-6f) + 48.0f) / 48.0f, 0.0f), 1.0f), std::memory_order_relaxed);
 }
 
 void GlobalFilter::process (int inst, float* l, float* r, int n)
 {
-    if (! cur.hpOn && ! cur.lpOn) { resetInstance (inst); return; }
+    if (! active()) { resetInstance (inst); return; }
     auto& f = insts[(size_t) inst];
     const float maxF = 0.45f * (float) sr;
     float* ch[2] = { l, r };
@@ -122,6 +147,9 @@ void GlobalFilter::process (int inst, float* l, float* r, int n)
             auto& lp1 = f.lp1[cc];
             auto& peakHp = f.peakHp[cc];
             auto& peakLp = f.peakLp[cc];
+            auto& peakBell = f.peakBell[cc];
+            const bool bellPk = std::abs (bellBlocks[bi]) > kBoostOffDb;
+            if (bellPk) peakBell.set (sr, std::min (cur.bellHz, maxF), cur.bellQ, bellBlocks[bi]); else peakBell.reset();
             if (cur.hpOn)
             {
                 const float fc = std::min (std::max (cur.hpHz * fm, 20.0f), maxF);
@@ -145,6 +173,7 @@ void GlobalFilter::process (int inst, float* l, float* r, int n)
                 if (cur.lpOn) a = lp1.processSample (0, lp.processSample (0, a));
                 if (hpPeak) a = peakHp.process (0, a);
                 if (lpPeak) a = peakLp.process (0, a);
+                if (bellPk) a = peakBell.process (0, a);
                 x[j] = a;
             }
         }

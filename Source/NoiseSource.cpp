@@ -36,6 +36,7 @@ void NoiseSource::prepare (double sampleRate)
     hp1.setType (juce::dsp::FirstOrderTPTFilterType::highpass);
     lp1.setType (juce::dsp::FirstOrderTPTFilterType::lowpass);
     levelSm.reset (sampleRate, 0.03);
+    panAmtSm.reset (sampleRate, 0.05);
     crkDecay = std::exp (-1.0f / (0.0015f * (float) sampleRate));
     envAtk = 1.0f - std::exp (-1.0f / (0.005f * (float) sr));
     envRel = 1.0f - std::exp (-1.0f / (0.15f * (float) sr));
@@ -60,8 +61,9 @@ void NoiseSource::reset()
 {
     for (auto& c : col) c = Color();
     crk[0] = crk[1] = 0.0f;
-    hp.reset(); lp.reset(); hp1.reset(); lp1.reset(); peakHp.reset(); peakLp.reset();
+    hp.reset(); lp.reset(); hp1.reset(); lp1.reset(); peakHp.reset(); peakLp.reset(); peakBell.reset();
     phase = 0.0;
+    panPhase = 0.0;
     framePos = 0;
     std::copy (std::begin (kSeeds), std::end (kSeeds), std::begin (seed));   // gleicher Zufall nach jedem reset()
     fModS = env = envMapped = 0.0f;
@@ -73,15 +75,16 @@ void NoiseSource::process (float* outL, float* outR, int n, const NoiseSettings&
                            const float* inL, const float* inR)
 {
     const float amp = 0.125f * s.level * s.level;   // 100 % = deutlich (Effektivwert ca. -18 dBFS), 30 % = Hintergrund
-    if (! initialised) { levelSm.setCurrentAndTargetValue (s.on ? amp : 0.0f); initialised = true; }
+    if (! initialised) { levelSm.setCurrentAndTargetValue (s.on ? amp : 0.0f); panAmtSm.setCurrentAndTargetValue (s.panAmt); initialised = true; }
     levelSm.setTargetValue (s.on ? amp : 0.0f);
+    panAmtSm.setTargetValue (s.panAmt);
 
     if (! s.on && ! isActive())
     {
         std::fill (outL, outL + n, 0.0f);
         std::fill (outR, outR + n, 0.0f);
         framePos = (framePos + n) % kSub;   // Raster laeuft weiter
-        hp.reset(); lp.reset(); hp1.reset(); lp1.reset(); peakHp.reset(); peakLp.reset();
+        hp.reset(); lp.reset(); hp1.reset(); lp1.reset(); peakHp.reset(); peakLp.reset(); peakBell.reset();
         return;
     }
 
@@ -101,6 +104,14 @@ void NoiseSource::process (float* outL, float* outR, int n, const NoiseSettings&
     const float crkRate = (4.0f + 60.0f * s.crackle * s.crackle) / fs;     // Wahrscheinlichkeit pro Sample
     const float crkAmt = s.crackle * 1.6f;
     const float maxF = 0.45f * fs;
+    // Auto-Pan: eigener Sinus-LFO, pro Sample (Equal-Power, Mitte = unveraendert)
+    const double panDivBeats = divBeatsOf (s.panDiv);
+    if (s.panSync && songPpq >= 0.0)
+    {
+        const double want = songPpq / panDivBeats;
+        if (std::abs (want - panPhase) > 1.0e-6) panPhase = want;
+    }
+    const double panInc = (s.panSync ? (bpm / 60.0) / panDivBeats : (double) s.panRateHz) / sr;
 
     // Steuerwerte je 16 Samples an der absoluten Sample-Position (wie DelayUnit): unabhaengig von der Blockgroesse
     for (int start = 0; start < n;)
@@ -130,6 +141,9 @@ void NoiseSource::process (float* outL, float* outR, int n, const NoiseSettings&
         frameHpPeak = s.hpOn && boostSm[0] > kBoostOffDb;
         frameLpPeak = s.lpOn && boostSm[1] > kBoostOffDb;
         const bool hpPeak = frameHpPeak, lpPeak = frameLpPeak;
+        bellSm += ((s.bellOn ? s.bellGain : 0.0f) - bellSm) * qCoef;   // Bell-Band, wie in der DelayUnit
+        frameBell = std::abs (bellSm) > kBoostOffDb;
+        if (frameBell) peakBell.set (sr, std::min (s.bellHz, maxF), s.bellQ, bellSm); else peakBell.reset();
 
         if (s.hpOn)
         {
@@ -147,7 +161,7 @@ void NoiseSource::process (float* outL, float* outR, int n, const NoiseSettings&
         else { lp.reset(); lp1.reset(); peakLp.reset(); }
         }
         const float trem = frameTrem;
-        const bool hpOn = frameHpOn, lpOn = frameLpOn, hpPeak = frameHpPeak, lpPeak = frameLpPeak;
+        const bool hpOn = frameHpOn, lpOn = frameLpOn, hpPeak = frameHpPeak, lpPeak = frameLpPeak, bell = frameBell;
 
         for (int j = 0; j < len; ++j)
         {
@@ -177,13 +191,27 @@ void NoiseSource::process (float* outL, float* outR, int n, const NoiseSettings&
             if (lpOn) { nl = lp1.processSample (0, lp.processSample (0, nl)); nr = lp1.processSample (1, lp.processSample (1, nr)); }
             if (hpPeak) { nl = peakHp.process (0, nl); nr = peakHp.process (1, nr); }
             if (lpPeak) { nl = peakLp.process (0, nl); nr = peakLp.process (1, nr); }
+            if (bell) { nl = peakBell.process (0, nl); nr = peakBell.process (1, nr); }
 
             const float g = levelSm.getNextValue() * trem;
+            const float pa = panAmtSm.getNextValue();
+            if (pa > 0.0f)
+            {
+                const float th = (pa * (float) std::sin (6.283185307179586 * (panPhase - std::floor (panPhase))) + 1.0f) * 0.78539816f;
+                nl *= 1.41421356f * std::cos (th);
+                nr *= 1.41421356f * std::sin (th);
+            }
+            panPhase += panInc;
             outL[i] = nl * g;
             outR[i] = nr * g;
         }
         start += len;
         framePos = (framePos + len) % kSub;
     }
+    posPub.store (phase, std::memory_order_relaxed);
+    ratePub.store ((float) lfoHz, std::memory_order_relaxed);
+    envPub.store (envMapped, std::memory_order_relaxed);
+    panPosPub.store (panPhase, std::memory_order_relaxed);
+    panRatePub.store ((float) (panInc * sr), std::memory_order_relaxed);
 }
 } // namespace qe

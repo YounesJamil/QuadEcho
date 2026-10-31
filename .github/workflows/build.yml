@@ -89,23 +89,22 @@ jobs:
         run: |
           mkdir -p package
           cp -R "build/QuadEcho_artefacts/Release/VST3/QUAD ECHO.vst3" package/
+          cp INSTALL.md package/
+          cp Resources/Fonts/OFL.txt package/OFL-Barlow.txt
           if [ "$RUNNER_OS" = "macOS" ]; then
             cp -R "build/QuadEcho_artefacts/Release/AU/QUAD ECHO.component" package/
             cp -R "build/QuadEcho_artefacts/Release/Standalone/QUAD ECHO.app" package/
             cd package && ditto -c -k --sequesterRsrc --keepParent . "../${{ matrix.zip }}" && cd ..
           else
             cp "build/QuadEcho_artefacts/Release/Standalone/QUAD ECHO.exe" package/
-          fi
-          cp INSTALL.md package/
-          cp Resources/Fonts/OFL.txt package/OFL-Barlow.txt
-          if [ "$RUNNER_OS" = "Windows" ]; then
             7z a "${{ matrix.zip }}" ./package/* > /dev/null
           fi
 
-      - uses: actions/upload-artifact@v4
+      # archive: false = das fertige Zip wird so hochgeladen (sonst packt GitHub es ein zweites Mal ein)
+      - uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.zip }}
           path: ${{ matrix.zip }}
+          archive: false
 
       - name: Release (nur bei Versions-Tag)
         if: startsWith(github.ref, 'refs/tags/v')

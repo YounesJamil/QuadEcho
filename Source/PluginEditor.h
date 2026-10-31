@@ -38,7 +38,7 @@ private:
     void applyExpertSize();
 
     static constexpr int kW = 1000, kBaseH = 752;
-    static constexpr int kDefaultW = 960;   // Standardgroesse: 4 % kleiner als die Entwurfsbreite
+    static constexpr int kDefaultW = 860;   // Standardgroesse: 14 % kleiner als die Entwurfsbreite (mit Expert passt es auf 1080p)
     static constexpr int kPosRows = qe::kNumUnits + 1;   // A-D und Noise
 
     QuadEchoProcessor& proc;
@@ -49,6 +49,10 @@ private:
     juce::TooltipWindow tooltipWindow { &content, 450 };
 
     RoutingSelector routing;
+    std::unique_ptr<ui::IconChoice> routeMode;   // Audio / Phase / Phase + Dry
+    ui::FineSlider routeDepth { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> routeDepthAttach;
+    std::unique_ptr<juce::ParameterAttachment> routeWatch;
     PadComponent pad;
     std::unique_ptr<ui::Knob> gMix, gOut, gFb, gDoppler;
     std::unique_ptr<ui::Toggle> gBinaural, gDist, gEarly, gLimiter, gLimitDry;

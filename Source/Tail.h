@@ -13,17 +13,21 @@ struct LoopFilterSpec
     double sr = 48000.0;
     bool hpOn = false, lpOn = false;
     double hpHz = 80.0, lpHz = 12000.0, qHp = 0.7071, qLp = 0.7071;
-    PeakEq peakHp, peakLp;
-    bool hpPeak = false, lpPeak = false;
+    PeakEq peakHp, peakLp, peakBell;
+    bool hpPeak = false, lpPeak = false, bellPk = false;
+    double bellHz = 1000.0;
 
     LoopFilterSpec (double sampleRate, bool hpOn_, double hpHz_, double qHp_, float hpBoostDb,
-                    bool lpOn_, double lpHz_, double qLp_, float lpBoostDb)
-        : sr (sampleRate), hpOn (hpOn_), lpOn (lpOn_), hpHz (hpHz_), lpHz (lpHz_), qHp (qHp_), qLp (qLp_)
+                    bool lpOn_, double lpHz_, double qLp_, float lpBoostDb,
+                    float bellDb = 0.0f, double bellHz_ = 1000.0, double bellQ = 1.0)
+        : sr (sampleRate), hpOn (hpOn_), lpOn (lpOn_), hpHz (hpHz_), lpHz (lpHz_), qHp (qHp_), qLp (qLp_), bellHz (bellHz_)
     {
         hpPeak = hpOn && hpBoostDb > kBoostOffDb;
         lpPeak = lpOn && lpBoostDb > kBoostOffDb;
+        bellPk = std::abs (bellDb) > kBoostOffDb;
         if (hpPeak) peakHp.set (sr, (float) hpHz, (float) qHp, hpBoostDb);
         if (lpPeak) peakLp.set (sr, (float) lpHz, (float) qLp, lpBoostDb);
+        if (bellPk) peakBell.set (sr, (float) bellHz, (float) bellQ, bellDb);
     }
 
     double magnitude (double f) const
@@ -49,13 +53,14 @@ struct LoopFilterSpec
             h *= (1.0 / (1.0 - v * v + j * v / qLp)) * (1.0 / (1.0 + j * v));
             if (lpPeak) h *= bell (peakLp);
         }
+        if (bellPk) h *= bell (peakBell);
         return std::abs (h);
     }
 
     // Maximum auf einem logarithmischen Raster (genau, fuer die Tail-Laenge)
     double peakOnGrid() const
     {
-        if (! hpOn && ! lpOn) return 1.0;
+        if (! hpOn && ! lpOn && ! bellPk) return 1.0;
         const double maxF = 0.45 * sr;
         double best = 0.0;
         constexpr int kPoints = 240;
@@ -68,7 +73,7 @@ struct LoopFilterSpec
     // (Glocken) bzw. knapp darunter (LP-Resonanz) oder darueber (HP-Resonanz)
     double peakFast() const
     {
-        if (! hpOn && ! lpOn) return 1.0;
+        if (! hpOn && ! lpOn && ! bellPk) return 1.0;
         const double maxF = 0.45 * sr;
         double best = 0.0;
         auto at = [&] (double f) { best = std::max (best, magnitude (std::min (std::max (f, 10.0), maxF))); };
@@ -82,12 +87,14 @@ struct LoopFilterSpec
             if (qHp > 0.7072) at (hpHz / std::sqrt (1.0 - 1.0 / (2.0 * qHp * qHp)));
             for (double k : { 0.92, 1.0, 1.08, 1.18 }) at (hpHz * k);
         }
+        if (bellPk) for (double k : { 0.9, 1.0, 1.1 }) at (bellHz * k);
         // Feinsuche um den besten Punkt (Goldener Schnitt auf log. Frequenz): breite Spitzen bei kleiner Resonanz
         // liegen sonst zwischen den Stuetzstellen
         double bestF = 10.0, bestM = -1.0;
         auto track = [&] (double f) { const double m = magnitude (std::min (std::max (f, 10.0), maxF)); if (m > bestM) { bestM = m; bestF = f; } return m; };
         if (lpOn) for (double k : { 0.5, 0.65, 0.75, 0.85, 0.92, 1.0 }) track (lpHz * k);
         if (hpOn) for (double k : { 1.0, 1.08, 1.18, 1.35, 1.6, 2.0 }) track (hpHz * k);
+        if (bellPk) for (double k : { 0.8, 0.9, 1.0, 1.1, 1.25 }) track (bellHz * k);
         double lo = std::log (bestF / 1.3), hi = std::log (bestF * 1.3);
         constexpr double g = 0.6180339887498949;
         for (int it = 0; it < 12; ++it)
@@ -103,7 +110,8 @@ inline LoopFilterSpec loopFilterOf (const EchoSettings& s, double sr)
 {
     const double maxF = 0.45 * sr;
     return { sr, s.hpOn, std::min (std::max ((double) s.hpHz, 20.0), maxF), 0.7071 + s.hpRes * s.hpRes * 4.0, s.hpBoost,
-             s.lpOn, std::min (std::max ((double) s.lpHz, 100.0), maxF), 0.7071 + s.res * s.res * 4.0, s.lpBoost };
+             s.lpOn, std::min (std::max ((double) s.lpHz, 100.0), maxF), 0.7071 + s.res * s.res * 4.0, s.lpBoost,
+             s.bellOn ? s.bellGain : 0.0f, std::min ((double) s.bellHz, maxF), (double) s.bellQ };
 }
 
 // Groesste Verstaerkung der Filterkette in der Schleife (Raster)
@@ -124,7 +132,7 @@ inline double tailSeconds (const EngineSettings& s, double bpm, double sr)
         if (e.freeze) return inf;
         double msL, msR;
         delayTimesMs (e, bpm, msL, msR);
-        const double delay = std::max (msL, msR) * 0.001 + (e.x4 ? 0.04 : 0.01) * e.delayDepth;
+        const double delay = std::max (msL, msR) * 0.001 + 0.01 * std::max (e.lfoAmt, e.envAmt) * e.delayDepth;
         const double peak = loopFilterPeakGain (e, sr);
         const double loop = std::abs ((double) e.feedback * (double) s.feedbackScale) * (e.stableFb ? std::min (peak, 1.0) : peak);
         if (loop >= 1.0) return inf;

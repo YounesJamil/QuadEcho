@@ -154,11 +154,13 @@ public:
         g.setFont (ui::uiFont (10.5f));
         g.drawText ("last 4 s, right = now", 130, 3, 200, 14, juce::Justification::centredLeft);
 
-        const float delayRangeMs = 10.0f * (es.x4 ? 4.0f : 1.0f);
+        const float delayRangeMs = 10.0f;
         const float delayScale = es.delayDepth * delayRangeMs;      // ms bei Modulation = 1
         const float filterScale = es.filterDepth * 2.0f;            // Oktaven bei Modulation = 1
         const bool filterActive = es.hpOn || es.lpOn;
         const float envMix = es.envMix;
+        const float lfoW = (1.0f - envMix) * es.lfoAmt, envW = envMix * es.envAmt;   // Anteile mit den Faktoren
+        const float modMax = std::max (1.0f, lfoW + envW);                          // Delay/Filter-Lanes passen in die Hoehe
         const double posNow = du.getLfoPos();
         const float rate = du.getLfoRateHz();
         const float phaseOff = es.phaseDeg / 360.0f;
@@ -166,11 +168,11 @@ public:
 
         auto lfoAt = [&] (float tau, bool right)
         {
-            return (es.lfoOn ? 1.0f : 0.0f) * qe::lfoWave (es.wave, posNow + (right ? phaseOff : 0.0f) - (double) (rate * tau));
+            return (es.lfoOn ? 1.0f : 0.0f) * (float) qe::modWaveD (es, posNow + (right ? phaseOff : 0.0f) - (double) (rate * tau));
         };
         auto lfoFilterAt = [&] (float tau)
         {
-            return (es.lfoOn ? 1.0f : 0.0f) * qe::lfoWave (es.wave, posNow + es.filterPhaseDeg / 360.0 - (double) (rate * tau));
+            return (es.lfoOn ? 1.0f : 0.0f) * (float) qe::modWaveD (es, posNow + es.filterPhaseDeg / 360.0 - (double) (rate * tau));
         };
         auto envAt = [&] (float tau)
         {
@@ -183,11 +185,11 @@ public:
         const int laneH = area.getHeight() / 4;
 
         struct Lane { const char* name; juce::Colour col; bool bipolar; bool active; juce::String now; };
-        const float mixNowL = lfoAt (0, false) * (1.0f - envMix) + envAt (0) * envMix;
-        const float mixNowR = lfoAt (0, true) * (1.0f - envMix) + envAt (0) * envMix;
+        const float mixNowL = lfoAt (0, false) * lfoW + envAt (0) * envW;
+        const float mixNowR = lfoAt (0, true) * lfoW + envAt (0) * envW;
         auto noNegZero = [] (float v) { return std::abs (v) < 0.005f ? 0.0f : v; };   // kein "+-0.00"
         const float dNow = noNegZero (0.5f * (mixNowL + mixNowR) * delayScale);
-        const float fNow = noNegZero ((lfoFilterAt (0) * (1.0f - envMix) + envAt (0) * envMix) * filterScale);
+        const float fNow = noNegZero ((lfoFilterAt (0) * lfoW + envAt (0) * envW) * filterScale);
         const Lane lanes[4] = {
             { "LFO",       lfoC,    true,  es.lfoOn && envMix < 0.999f, juce::String (lfoAt (0, false), 2) },
             { "ENVELOPE",  envC,    false, envMix > 0.001f, juce::String ((int) std::round (envAt (0) * envMix * 100.0f)) + " %" },
@@ -221,13 +223,13 @@ public:
             auto valueAt = [&] (float tau, bool right)
             {
                 const float e = envAt (tau);
-                const float mix = lfoAt (tau, right) * (1.0f - envMix) + e * envMix;
+                const float mix = lfoAt (tau, right) * lfoW + e * envW;
                 switch (i)
                 {
                     case 0: return lfoAt (tau, right);
                     case 1: return e * envMix;                   // waechst mit Envelope mix
-                    case 2: return mix * es.delayDepth;          // Amplitude waechst mit der Depth
-                    default: return (lfoFilterAt (tau) * (1.0f - envMix) + e * envMix) * es.filterDepth;
+                    case 2: return mix * es.delayDepth / modMax;          // Amplitude waechst mit der Depth
+                    default: return (lfoFilterAt (tau) * lfoW + e * envW) * es.filterDepth / modMax;
                 }
             };
 

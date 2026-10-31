@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Auswertungen fuer AUDIT.md (Phase 1): Schleifenverstaerkung, Hermite-Frequenzgang, Aliasing der Schleifen-Saettigung.
+"""Auswertungen fuer das DSP-Audit (Phase 1): Schleifenverstaerkung, Hermite-Frequenzgang, Aliasing der Schleifen-Saettigung.
 
 Analytisch: Frequenzgaenge der Filter in der Feedback-Schleife (JUCE TPT-SVF 2. Ordnung + TPT 1. Ordnung = bilineare
 Transformation mit Vorverzerrung auf fc; Glocke nach RBJ) und des Hermite-Interpolators (4-Punkt, 3. Ordnung).

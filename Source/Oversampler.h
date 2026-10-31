@@ -4,7 +4,7 @@
 
 namespace qe
 {
-// 2-fach-Oversampling fuer die Saettigungen (AUDIT.md C3): linearphasiger Halbband-FIR, 47 Taps, Kaiser-Fenster
+// 2-fach-Oversampling fuer die Saettigungen: linearphasiger Halbband-FIR, 47 Taps, Kaiser-Fenster
 // (beta 8). Durchlass bis 0,42 fs flach (< 0,001 dB), Sperrbereich ab 0,58 fs unter -80 dB.
 // Hoch- und Runtertasten zusammen verzoegern um genau kLatency Samples (ganzzahlig, wichtig fuer Freeze).
 // Polyphasen-Form: beim Hochtasten ist jeder zweite Ausgang eine reine Verzoegerung, beim Runtertasten

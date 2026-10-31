@@ -10,7 +10,9 @@ public:
         : unit (unitIndex), echoDisplay (proc, unitIndex), modDisplay (proc, unitIndex),
           filterGraph (proc.apvts, { qe::paramId (unitIndex, qe::pHpOn), qe::paramId (unitIndex, qe::pLpOn), qe::paramId (unitIndex, qe::pHp),
                                      qe::paramId (unitIndex, qe::pLp), qe::paramId (unitIndex, qe::pHpRes), qe::paramId (unitIndex, qe::pRes),
-                                     qe::paramId (unitIndex, qe::pHpBoost), qe::paramId (unitIndex, qe::pLpBoost) },
+                                     qe::paramId (unitIndex, qe::pHpBoost), qe::paramId (unitIndex, qe::pLpBoost),
+                                     qe::paramId (unitIndex, qe::pBellOn), qe::paramId (unitIndex, qe::pBellHz), qe::paramId (unitIndex, qe::pBellGain),
+                                     qe::paramId (unitIndex, qe::pBellQ) },
                        ui::unitColour (unitIndex))
     {
         using namespace qe;
@@ -20,7 +22,7 @@ public:
 
         auto colFor = [col] (int p)
         {
-            return (p == pRate || p == pLfoDiv || p == pPhase || p == pFPhase || p == pLfoOn || p == pDDepth || p == pFDepth || p == pEnv || p == pLfoSync || p == pX4)
+            return (p == pRate || p == pLfoDiv || p == pPhase || p == pFPhase || p == pLfoOn || p == pDDepth || p == pFDepth || p == pEnv || p == pLfoSync || p == pLfoAmt || p == pEnvAmt || p == pGlide || p == pSeed)
                        ? ui::kModColour : col;
         };
         auto addKnob = [&] (int p, const juce::String& title, std::function<juce::String (double)> fmt,
@@ -96,6 +98,7 @@ public:
         addToggle (pFbInv, juce::String::fromUTF8 ("\xc3\x98 INVERT"));
         addToggle (pFreeze, "FREEZE");
         addToggle (pFbStable, "STABLE");
+        addToggle (pTape, "TAPE");
 
         // ---- Feedback-Filter als EQ-Kurve ----
         addChildComponent (filterGraph);
@@ -117,15 +120,69 @@ public:
         addKnob (pLfoDiv, "Rate (sync)", ui::fmtDiv, ui::parseDiv);
         addKnob (pPhase, juce::String::fromUTF8 ("\xcf\x86 Phase R"), ui::fmtDeg);
         addKnob (pFPhase, juce::String::fromUTF8 ("\xcf\x86 Filter"), ui::fmtDeg);
-        addToggle (pX4, "x4");
+        // Faktoren 0,1-10 auf LFO- bzw. Huellkurven-Anteil (Delay und Filter)
+        auto fmtFactor = [] (double v) { return juce::String::fromUTF8 ("\xc3\x97") + juce::String (v, v < 1.0 ? 2 : 1); };
+        auto parseFactor = [] (const juce::String& t) { return t.retainCharacters (".0123456789").getDoubleValue(); };
+        addKnob (pLfoAmt, juce::String::fromUTF8 ("LFO \xc3\x97"), fmtFactor, parseFactor);
+        addKnob (pEnvAmt, juce::String::fromUTF8 ("ENV \xc3\x97"), fmtFactor, parseFactor);
         addKnob (pDDepth, "Delay depth", ui::fmtPct, ui::parsePct);
         addKnob (pFDepth, "Filter depth", ui::fmtPct, ui::parsePct);
         addKnob (pEnv, "Envelope mix", ui::fmtPct, ui::parsePct);
 
+        // ---- Schritt-Muster (ersetzt die LFO-Welle, wenn nicht Off) ----
+        {
+            auto textChoice = [&] (int p, juce::StringArray labels, juce::StringArray tips)
+            {
+                std::vector<ui::IconChoice::Icon> list;
+                for (const auto& t : labels)
+                    list.push_back ([t] (juce::Graphics& g, juce::Rectangle<float> r, juce::Colour c)
+                                    { g.setColour (c); g.setFont (ui::uiFont (11.0f, true)); g.drawText (t, r, juce::Justification::centred); });
+                addChoice (p, std::make_unique<ui::IconChoice> (apvts, id (p), std::move (list), tips, ui::kModColour));
+            };
+            textChoice (pPattern, { "OFF", "STAIRS", "ZIGZAG", "SYNCOPATED", "RANDOM" },
+                        { "Off: the LFO wave is used", "Stairs: steps rising over one LFO cycle", "Zigzag: alternating up and down, growing",
+                          "Syncopated: 3-3-2 accents", "Random: a fixed random pattern per seed (NEW SEED for another one)" });
+            textChoice (pSteps, { "8", "16" }, { "8 steps per LFO cycle", "16 steps per LFO cycle" });
+            auto pill = [&] (ui::FineSlider& b, std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>& att, int p,
+                             std::function<juce::String (double)> txt, std::function<double (const juce::String&)> parse, double def, const juce::String& tip)
+            {
+                b.getProperties().set ("numberbox", true);
+                b.setColour (juce::Slider::textBoxTextColourId, ui::kText);
+                b.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
+                b.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+                att = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, id (p), b);
+                b.textFromValueFunction = std::move (txt);
+                b.valueFromTextFunction = std::move (parse);
+                b.setDoubleClickReturnValue (true, def);
+                b.setTooltip (tip);
+                b.updateText();
+                addChildComponent (b);
+            };
+            auto digits = [] (const juce::String& t) { return t.retainCharacters (".0123456789").getDoubleValue(); };
+            pill (glideBox, glideAttach, pGlide, [] (double v) { return "Glide " + juce::String (v * 100.0, 0) + "%"; },
+                  [digits] (const juce::String& t) { return digits (t) / 100.0; }, 0.0, "Glide: 0 = the delay time jumps from step to step, 100% = it slides over the whole step.");
+            pill (seedBox, seedAttach, pSeed, [] (double v) { return "Seed " + juce::String ((int) std::lround (v)); }, digits, 1.0, "Seed of the random pattern (drag or type).");
+            seedBtn.setButtonText ("NEW SEED");
+            seedBtn.setTooltip ("A new random pattern (sets PATTERN to RANDOM).");
+            seedBtn.onClick = [this, &apvts]
+            {
+                auto setParam = [&apvts, this] (int p, float v)
+                {
+                    auto* prm = apvts.getParameter (qe::paramId (unit, p));
+                    prm->beginChangeGesture();
+                    prm->setValueNotifyingHost (prm->convertTo0to1 (v));
+                    prm->endChangeGesture();
+                };
+                setParam (qe::pSeed, (float) juce::Random::getSystemRandom().nextInt ({ 1, 1000 }));
+                setParam (qe::pPattern, (float) qe::PatRandom);
+            };
+            addChildComponent (seedBtn);
+        }
+
         addChildComponent (echoDisplay);
         addChildComponent (modDisplay);
 
-        for (int p : { pSync, pSyncMode, pSyncModeR, pLink, pMode, pLfoSync, pLfoOn })
+        for (int p : { pSync, pSyncMode, pSyncModeR, pLink, pMode, pLfoSync, pLfoOn, pPattern })
         {
             watchers.push_back (std::make_unique<juce::ParameterAttachment> (
                 *apvts.getParameter (id (p)), [this] (float) { updateVisibility(); }));
@@ -157,6 +214,7 @@ public:
         {
             cardsOn ("LFO", cardLfo(), ui::kModColour);
             cardsOn ("DEPTH AND ENVELOPE", cardDepth(), ui::kModColour);
+            cardsOn ("PATTERN", cardPattern(), ui::kModColour);
         }
     }
 
@@ -185,6 +243,7 @@ public:
         at (choices[pTrans].get(), juce::Rectangle<int> (f.getX() + 112, f.getY() + 70, 180, 48));
         at (toggles[pFbInv].get(), juce::Rectangle<int> (f.getX() + 112, f.getY() + 126, 88, 30));
         at (toggles[pFreeze].get(), juce::Rectangle<int> (f.getX() + 204, f.getY() + 126, 88, 30));
+        at (toggles[pTape].get(), juce::Rectangle<int> (f.getRight() - 80, f.getY() + 3, 70, 16));
 
         echoDisplay.setBounds (cardPreview().withTrimmedTop (4));
         filterGraph.setBounds (cardFilter().reduced (8, 0).withTrimmedTop (20).withTrimmedBottom (8));
@@ -209,13 +268,20 @@ public:
         at (knobs[pRate].get(), lfk (154));  at (knobs[pLfoDiv].get(), lfk (154));
         at (knobs[pPhase].get(), lfk (246));
         at (knobs[pFPhase].get(), lfk (338));
-        at (toggles[pX4].get(), juce::Rectangle<int> (lf.getX() + 436, lf.getY() + 44, 76, 32));
+        at (knobs[pLfoAmt].get(), lfk (426));
 
         const auto dp = cardDepth();
         at (knobs[pDDepth].get(), kb (dp, 0));
         at (knobs[pFDepth].get(), kb (dp, 1));
         at (knobs[pEnv].get(), kb (dp, 2));
+        at (knobs[pEnvAmt].get(), kb (dp, 3));
 
+        const auto pc = cardPattern();
+        at (choices[pPattern].get(), juce::Rectangle<int> (pc.getX() + 80, pc.getY() + 7, 420, 26));
+        at (choices[pSteps].get(), juce::Rectangle<int> (pc.getX() + 510, pc.getY() + 7, 80, 26));
+        glideBox.setBounds (pc.getX() + 600, pc.getY() + 10, 100, 20);
+        seedBox.setBounds (pc.getX() + 710, pc.getY() + 10, 90, 20);
+        seedBtn.setBounds (pc.getX() + 808, pc.getY() + 7, 120, 26);
         modDisplay.setBounds (cardLive());
     }
 
@@ -227,7 +293,8 @@ private:
     juce::Rectangle<int> cardLevel() const    { return { 430, 186, 520, 136 }; }
     juce::Rectangle<int> cardLfo() const      { return { 10, 12, 520, 136 }; }
     juce::Rectangle<int> cardDepth() const    { return { 538, 12, 412, 136 }; }
-    juce::Rectangle<int> cardLive() const     { return { 10, 156, 940, 166 }; }
+    juce::Rectangle<int> cardPattern() const  { return { 10, 156, 940, 40 }; }   // Titel links, Bedienung in einer Reihe
+    juce::Rectangle<int> cardLive() const     { return { 10, 202, 940, 120 }; }
 
     void updateVisibility()
     {
@@ -256,12 +323,12 @@ private:
         for (auto& b : offsetBox) b.setVisible (echo);
         for (int p : { pFb, pInGain, pMix, pOut, pWidth }) knobs[(size_t) p]->setVisible (echo);
         for (int p : { pMode, pTrans }) choices[(size_t) p]->setVisible (echo);
-        for (int p : { pSync, pFbInv, pFreeze, pFbStable, pInDry, pPosDry, pOn }) toggles[(size_t) p]->setVisible (echo);
+        for (int p : { pSync, pFbInv, pFreeze, pFbStable, pTape, pInDry, pPosDry, pOn }) toggles[(size_t) p]->setVisible (echo);
         linkToggle->setVisible (echo);
         echoDisplay.setVisible (echo);
         filterGraph.setVisible (echo);
 
-        // Single-Delay (LINK aus, Standard): die rechte Zeit folgt der linken (ausgegraut); LINK an gibt sie frei
+        // Single-Delay (LINK an, Standard): die rechte Zeit folgt der linken (ausgegraut); LINK aus gibt sie frei
         for (auto* c : std::initializer_list<juce::Component*> { knobs[pTimeR].get(), knobs[pSixR].get(), divKnobs[1].get() })
         {
             c->setEnabled (split);
@@ -275,15 +342,27 @@ private:
         knobs[pLfoDiv]->setVisible (! echo && lfoSync);
         knobs[pPhase]->setVisible (! echo);
         knobs[pFPhase]->setVisible (! echo);
-        toggles[pX4]->setVisible (! echo);
+        knobs[pLfoAmt]->setVisible (! echo);
         // LFO aus: die LFO-Regler werden abgedunkelt
         for (auto* c : std::initializer_list<juce::Component*> { choices[pWave].get(), toggles[pLfoSync].get(), knobs[pRate].get(), knobs[pLfoDiv].get(),
-                                                                  knobs[pPhase].get(), knobs[pFPhase].get() })
+                                                                  knobs[pPhase].get(), knobs[pFPhase].get(), knobs[pLfoAmt].get() })
         {
             c->setEnabled (lfoOn);
             c->setAlpha (lfoOn ? 1.0f : 0.5f);
         }
-        for (int p : { pDDepth, pFDepth, pEnv }) knobs[(size_t) p]->setVisible (! echo);
+        for (int p : { pDDepth, pFDepth, pEnv, pEnvAmt }) knobs[(size_t) p]->setVisible (! echo);
+        // Schritt-Muster: ersetzt die Welle (abgedunkelt); Seed nur fuer Random
+        const int pat = (int) (cur (pPattern) + 0.5f);
+        for (auto* c : std::initializer_list<juce::Component*> { choices[pPattern].get(), choices[pSteps].get(), &glideBox, &seedBox, &seedBtn })
+            c->setVisible (! echo);
+        for (auto* c : std::initializer_list<juce::Component*> { choices[pSteps].get(), &glideBox })
+        {
+            c->setEnabled (pat != PatOff);
+            c->setAlpha (pat != PatOff ? 1.0f : 0.45f);
+        }
+        seedBox.setEnabled (pat == PatRandom);
+        seedBox.setAlpha (pat == PatRandom ? 1.0f : 0.45f);
+        if (pat != PatOff) { choices[pWave]->setEnabled (false); choices[pWave]->setAlpha (0.45f); }
         modDisplay.setVisible (! echo);
     }
 
@@ -303,6 +382,9 @@ private:
     std::array<std::unique_ptr<ui::NoteDivKnob>, 2> divKnobs;
     std::array<ui::FineSlider, 2> offsetBox { { { juce::Slider::LinearBar, juce::Slider::TextBoxLeft }, { juce::Slider::LinearBar, juce::Slider::TextBoxLeft } } };
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 2> offsetAttach;
+    ui::FineSlider glideBox { juce::Slider::LinearBar, juce::Slider::TextBoxLeft }, seedBox { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> glideAttach, seedAttach;
+    juce::TextButton seedBtn;
     EchoDisplay echoDisplay;
     ModDisplay modDisplay;
     ui::FilterGraph filterGraph;
