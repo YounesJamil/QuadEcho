@@ -7,7 +7,8 @@ class DuckMeter : public juce::Component, private juce::Timer
 {
 public:
     explicit DuckMeter (QuadEchoProcessor& p)
-        : proc (p), threshold (p.apvts.getRawParameterValue (qe::kGlobalIds[qe::dkThreshold]))
+        : proc (p), threshold (p.apvts.getRawParameterValue (qe::kGlobalIds[qe::dkThreshold])),
+          source (p.apvts.getRawParameterValue (qe::kGlobalIds[qe::dkSource]))
     {
         setInterceptsMouseClicks (false, false);
         startTimerHz (30);
@@ -18,7 +19,7 @@ public:
         auto b = getLocalBounds().toFloat();
         const float inDb = 20.0f * std::log10 (std::max (inShown, 1.0e-6f));
         // INPUT: -60 .. 0 dB (Bereich des Thresholds), Marke = Threshold
-        row (g, b.removeFromTop (b.getHeight() * 0.5f), "INPUT", inDb > -59.9f ? juce::String (inDb, 1) + " dB" : juce::String ("-inf dB"),
+        row (g, b.removeFromTop (b.getHeight() * 0.5f), source->load() > 0.5f ? "SIDECHAIN" : "INPUT", inDb > -59.9f ? juce::String (inDb, 1) + " dB" : juce::String ("-inf dB"),
              (inDb + 60.0f) / 60.0f, inDb > threshold->load() ? ui::kText : ui::kDim, threshold->load(), -60.0f);
         // ECHO REDUCTION: 0 .. -24 dB
         row (g, b, "ECHO REDUCTION", (redShown > 0.05f ? "-" : "") + juce::String (redShown, 1) + " dB", redShown / 24.0f,
@@ -80,6 +81,7 @@ private:
     }
     QuadEchoProcessor& proc;
     std::atomic<float>* threshold;
+    std::atomic<float>* source;   // dk_source: Eingang oder Sidechain
     float redShown = 0.0f, inShown = 0.0f, lastThr = 0.0f;
 };
 
@@ -222,10 +224,10 @@ public:
     explicit ExpertPanel (QuadEchoProcessor& p)
         : proc (p), duckMeter (p), gfLive (p, false), nzLive (p, true),
           gfGraph (p.apvts, { qe::kGlobalIds[qe::gfHpOn], qe::kGlobalIds[qe::gfLpOn], qe::kGlobalIds[qe::gfHp], qe::kGlobalIds[qe::gfLp],
-                              qe::kGlobalIds[qe::gfHpRes], qe::kGlobalIds[qe::gfRes], qe::kGlobalIds[qe::gfHpBoost], qe::kGlobalIds[qe::gfLpBoost] , qe::kGlobalIds[qe::gfBellOn], qe::kGlobalIds[qe::gfBellHz], qe::kGlobalIds[qe::gfBellGain], qe::kGlobalIds[qe::gfBellQ]},
+                              qe::kGlobalIds[qe::gfHpRes], qe::kGlobalIds[qe::gfRes], qe::kGlobalIds[qe::gfHpBoost], qe::kGlobalIds[qe::gfLpBoost] , qe::kGlobalIds[qe::gfBellOn], qe::kGlobalIds[qe::gfBellHz], qe::kGlobalIds[qe::gfBellGain], qe::kGlobalIds[qe::gfBellQ], qe::kGlobalIds[qe::gfBellMod] },
                    juce::Colour (0xffbb9cd6)),
           nzGraph (p.apvts, { qe::kGlobalIds[qe::nzHpOn], qe::kGlobalIds[qe::nzLpOn], qe::kGlobalIds[qe::nzHp], qe::kGlobalIds[qe::nzLp],
-                              qe::kGlobalIds[qe::nzHpRes], qe::kGlobalIds[qe::nzRes], qe::kGlobalIds[qe::nzHpBoost], qe::kGlobalIds[qe::nzLpBoost] , qe::kGlobalIds[qe::nzBellOn], qe::kGlobalIds[qe::nzBellHz], qe::kGlobalIds[qe::nzBellGain], qe::kGlobalIds[qe::nzBellQ]},
+                              qe::kGlobalIds[qe::nzHpRes], qe::kGlobalIds[qe::nzRes], qe::kGlobalIds[qe::nzHpBoost], qe::kGlobalIds[qe::nzLpBoost] , qe::kGlobalIds[qe::nzBellOn], qe::kGlobalIds[qe::nzBellHz], qe::kGlobalIds[qe::nzBellGain], qe::kGlobalIds[qe::nzBellQ], qe::kGlobalIds[qe::nzBellMod] },
                    juce::Colour (0xffbb9cd6))
     {
         using namespace qe;
@@ -255,6 +257,15 @@ public:
         const auto mod = ui::kModColour;
 
         // Seite 3: Stereo und analoger Chorus
+        auto TC = [&] (int g, juce::StringArray labels, juce::StringArray tips, juce::Colour col = ui::kModColour)
+        {
+            std::vector<ui::IconChoice::Icon> list;
+            for (const auto& t : labels)
+                list.push_back ([t] (juce::Graphics& gr, juce::Rectangle<float> r, juce::Colour c)
+                                { gr.setColour (c); gr.setFont (ui::uiFont (11.0f, true)); gr.drawText (t, r, juce::Justification::centred); });
+            waves[(size_t) g] = std::make_unique<ui::IconChoice> (apvts, kGlobalIds[g], std::move (list), tips, col);
+            addChildComponent (*waves[(size_t) g]);
+        };
         {
             const auto sc = ui::kAccent;
             K (stWidth, "Width", ui::fmtPct, ui::parsePct, sc);
@@ -262,17 +273,14 @@ public:
             T (stInclDry, "INCLUDE DRY", sc, true);
             T (chOn, "CHORUS ON", mod);
             K (chMix, "Mix", ui::fmtPct, ui::parsePct, mod);
-            auto TC = [&] (int g, juce::StringArray labels, juce::StringArray tips)
-            {
-                std::vector<ui::IconChoice::Icon> list;
-                for (const auto& t : labels)
-                    list.push_back ([t] (juce::Graphics& gr, juce::Rectangle<float> r, juce::Colour c)
-                                    { gr.setColour (c); gr.setFont (ui::uiFont (11.0f, true)); gr.drawText (t, r, juce::Justification::centred); });
-                waves[(size_t) g] = std::make_unique<ui::IconChoice> (apvts, kGlobalIds[g], std::move (list), tips, mod);
-                addChildComponent (*waves[(size_t) g]);
-            };
+            auto fmtFactor = [] (double v) { return juce::String::fromUTF8 ("\xc3\x97") + juce::String (v, v < 1.0 ? 2 : 1); };
+            auto parseDigits = [] (const juce::String& t) { return t.retainCharacters (".0123456789").getDoubleValue(); };
+            K (chRate, "Rate", fmtFactor, parseDigits, mod);
+            K (chDepth, "Depth", fmtFactor, parseDigits, mod);
+            K (chTone, "Tone", [] (double v) { return juce::String (v / 1000.0, 1) + " kHz"; },
+               [] (const juce::String& t) { const double v = t.retainCharacters (".0123456789").getDoubleValue(); return v < 100.0 ? v * 1000.0 : v; }, mod);
             TC (chMode, { "I", "II", "I + II" }, { "Mode I: slow and wide", "Mode II: a bit faster, more movement", "Mode I + II: fast, shallow shimmer" });
-            TC (chPlace, { "ON ECHOES", "IN LOOP" }, { "On the sum of the echoes (once, with a touch of bucket-brigade hiss)",
+            TC (chPlace, { "ECHOES", "IN LOOP" }, { "On the sum of the echoes (once, with a touch of bucket-brigade hiss)",
                                                        "Inside the feedback loop of every unit: each repeat is chorused again" });
         }
 
@@ -321,6 +329,7 @@ public:
           [] (const juce::String& t) { return std::abs (t.getDoubleValue()); }, dc);
         K (dkAttack, "Attack", ui::fmtMs, ui::parseNum, dc);
         K (dkRelease, "Release", ui::fmtMs, ui::parseNum, dc);
+        TC (dkSource, { "INPUT", "SIDECHAIN" }, { "Ducks on the plugin input", "Ducks on the external sidechain (choose the source in your DAW; nothing connected = no ducking)" }, dc);
         addChildComponent (duckMeter);
         addChildComponent (gfLive);
         addChildComponent (nzLive);
@@ -401,7 +410,7 @@ public:
             card ("DUCKING", duckCard(), ui::kAccent);
             g.setColour (ui::kDim);
             g.setFont (ui::uiFont (11.0f));
-            g.drawText ("The echoes dip while the input is above the threshold and come back in the pauses (vocals, solos). The original and the noise stay untouched.",
+            g.drawText ("The echoes dip while the input (or the sidechain, see INPUT / SIDECHAIN) is above the threshold and come back in the pauses (vocals, solos). The original and the noise stay untouched.",
                         juce::Rectangle<int> (20, kRowY + kCardH + 8, 920, 32), juce::Justification::topLeft);
         }
     }
@@ -460,7 +469,8 @@ public:
 
         // ---- Ducking ----
         const auto d = duckCard();
-        at (toggles[dkOn].get(), juce::Rectangle<int> (d.getX() + 12, d.getY() + 36, 136, 34));
+        at (toggles[dkOn].get(), juce::Rectangle<int> (d.getX() + 12, d.getY() + 30, 136, 30));
+        at (waves[dkSource].get(), juce::Rectangle<int> (d.getX() + 12, d.getY() + 68, 136, 26));
         const int duckOrder[4] = { dkThreshold, dkAmount, dkAttack, dkRelease };
         for (int i = 0; i < 4; ++i)
             at (knobs[(size_t) duckOrder[i]].get(), kb (d, 170 + i * 100, 84));
@@ -473,8 +483,11 @@ public:
         at (toggles[stInclDry].get(), juce::Rectangle<int> (st.getX() + 200, st.getY() + 36, 136, 34));
         at (toggles[chOn].get(), juce::Rectangle<int> (ch.getX() + 12, ch.getY() + 22, 130, 30));
         at (waves[chMode].get(), juce::Rectangle<int> (ch.getX() + 12, ch.getY() + 60, 130, 30));
-        at (knobs[chMix].get(), kb (ch, 156, 84));
-        at (waves[chPlace].get(), juce::Rectangle<int> (ch.getX() + 252, ch.getY() + 40, 220, 30));
+        at (knobs[chMix].get(), kb (ch, 148, 70));
+        at (knobs[chRate].get(), kb (ch, 218, 70));
+        at (knobs[chDepth].get(), kb (ch, 288, 70));
+        at (knobs[chTone].get(), kb (ch, 358, 70));
+        at (waves[chPlace].get(), juce::Rectangle<int> (ch.getX() + 436, ch.getY() + 40, 130, 30));
     }
 
 private:
@@ -524,6 +537,7 @@ private:
             dim (c, val (nzLfoOn));
 
         show (toggles[dkOn].get(), p2);
+        show (waves[dkSource].get(), p2);
         for (int g : { dkThreshold, dkAmount, dkAttack, dkRelease })
         {
             show (knobs[(size_t) g].get(), p2);
@@ -531,10 +545,11 @@ private:
         }
         duckMeter.setVisible (p2);
 
-        for (int g : { stWidth, stEnhance, chMix }) show (knobs[(size_t) g].get(), p3);
+        for (int g : { stWidth, stEnhance, chMix, chRate, chDepth, chTone }) show (knobs[(size_t) g].get(), p3);
         for (int g : { stInclDry, chOn }) show (toggles[(size_t) g].get(), p3);
         for (int g : { chMode, chPlace }) show (waves[(size_t) g].get(), p3);
-        for (auto* c : std::initializer_list<juce::Component*> { waves[chMode].get(), waves[chPlace].get(), knobs[chMix].get() })
+        for (auto* c : std::initializer_list<juce::Component*> { waves[chMode].get(), waves[chPlace].get(), knobs[chMix].get(), knobs[chRate].get(),
+                                                                  knobs[chDepth].get(), knobs[chTone].get() })
             dim (c, val (chOn));
 
         // Abdunkeln, was gerade nichts bewirkt: Modulation des globalen Filters ohne HP/LP, Schalter ohne Filter,

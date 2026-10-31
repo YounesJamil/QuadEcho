@@ -278,6 +278,25 @@ QuadEchoEditor::QuadEchoEditor (QuadEchoProcessor& p)
         gDoppler->setAlpha (on ? 1.0f : 0.5f);
     });
     distWatch->sendInitialUpdate();
+    // Helligkeit des Binaural-Anteils (Kuhschwanz ab 4 kHz): nur mit BINAURAL bedienbar
+    binTone.getProperties().set ("numberbox", true);
+    binTone.setColour (juce::Slider::textBoxTextColourId, ui::kText);
+    binTone.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
+    binTone.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    binToneAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, qe::kIdBinTone, binTone);
+    binTone.textFromValueFunction = [] (double v) { return "Tone " + juce::String (v > 0.0 ? "+" : "") + juce::String (v, 1) + " dB"; };
+    binTone.valueFromTextFunction = [] (const juce::String& t) { return t.retainCharacters ("-.0123456789").getDoubleValue(); };
+    binTone.setDoubleClickReturnValue (true, 0.0);
+    binTone.setTooltip ("Brightness of the binaural sound (high shelf from 4 kHz, -6 to +6 dB). Only with BINAURAL on.");
+    binTone.updateText();
+    content.addAndMakeVisible (binTone);
+    binWatch = std::make_unique<juce::ParameterAttachment> (*apvts.getParameter (qe::kIdBinaural), [this] (float v)
+    {
+        const bool on = v > 0.5f;
+        binTone.setEnabled (on);
+        binTone.setAlpha (on ? 1.0f : 0.4f);
+    });
+    binWatch->sendInitialUpdate();
 
     // Gespeicherter UI-Zustand (Fensterbreite, Einheit, Seite, Expert)
     int w = (int) apvts.state.getProperty ("uiW", kDefaultW);
@@ -360,7 +379,7 @@ void QuadEchoEditor::setCompact (bool compact)
     proc.apvts.state.setProperty ("uiCompact", compact, nullptr);
     compactBtn.setToggleState (compact, juce::dontSendNotification);
     for (juce::Component* c : std::initializer_list<juce::Component*> { &routing, routeMode.get(), &routeDepth, gMix.get(), gOut.get(), gFb.get(),
-                                                                       gLimiter.get(), gLimitDry.get(), gFreezeAll.get(), gAutoLevel.get(), &pad, gBinaural.get(),
+                                                                       gLimiter.get(), gLimitDry.get(), gFreezeAll.get(), gAutoLevel.get(), &pad, gBinaural.get(), &binTone,
                                                                        gEarly.get(), gDist.get(), gDoppler.get() })
         c->setVisible (! compact);
     for (auto& h : posHeads) h.setVisible (! compact);
@@ -476,6 +495,7 @@ void QuadEchoEditor::resized()
     // Doppler sitzt neben DIST. DELAY, von dem er abhaengt
     const int roomY = rowY + kPosRows * rowStep + 8;
     gBinaural->setBounds (rc.getX() + 8, roomY, 100, 30);
+    binTone.setBounds (rc.getX() + 11, roomY + 41, 94, 20);
     gEarly->setBounds (rc.getX() + 110, roomY, 100, 30);
     gDist->setBounds (rc.getX() + 110, roomY + 36, 100, 30);
     gDoppler->setBounds (rc.getX() + 210, roomY - 6, 76, 96);

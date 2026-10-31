@@ -856,6 +856,21 @@ void testNewFeatures()
         check (rms (rearS.l, a, nz.l.size()) < rms (frontS.l, a, nz.l.size()), "Stereo: hinten etwas leiser");
     }
     {
+        // binTone: +6 dB heller, -6 dB dunkler, im Stereo-Modus ohne Wirkung (bitgleich)
+        auto toneRun = [&] (bool binaural, float db)
+        {
+            Spatializer sp; sp.prepare (sr);
+            Sig out = nz;
+            SpatialOptions so; so.binaural = binaural; so.earlyReflections = false; so.binToneDb = db;
+            for (size_t pos = 0; pos < nz.l.size(); pos += 256)
+                sp.process (out.l.data() + pos, out.r.data() + pos, (int) std::min<size_t> (256, nz.l.size() - pos), { 0.3f, 0.5f, 0 }, so);
+            return out;
+        };
+        const double h0 = hfRatio (toneRun (true, 0.0f).l), hUp = hfRatio (toneRun (true, 6.0f).l), hDn = hfRatio (toneRun (true, -6.0f).l);
+        check (hUp > h0 * 1.3 && hDn < h0 * 0.8 && toneRun (false, 6.0f).l == toneRun (false, 0.0f).l,
+               "binTone: +6 dB heller, -6 dB dunkler, Stereo unveraendert");
+    }
+    {
         // Umschalten Stereo <-> Binaural ohne Klick
         Spatializer sp; sp.prepare (sr);
         auto in = sine ((size_t) (2 * sr), sr, 1000.0, 0.5f);
@@ -1015,6 +1030,30 @@ void testMixFreezeDuck()
         const float pause = rms (ducked.l, (size_t) (1.2 * sr), (size_t) (1.29 * sr)) / rms (plain.l, (size_t) (1.2 * sr), (size_t) (1.29 * sr));
         check (std::abs (toDb (during) + 12.0f) < 1.0f, "Ducking: waehrend des Spielens -12 dB (" + std::to_string (toDb (during)) + " dB)");
         check (toDb (pause) > -1.0f, "Ducking: in der Pause kommen die Echos zurueck (" + std::to_string (toDb (pause)) + " dB)");
+
+        // Sidechain: lauter Sidechain duckt, ohne Sidechain (nullptr) kein Ducking, Eingang zaehlt dann nicht
+        auto runSc = [&] (int source, bool connected)
+        {
+            auto e = std::make_unique<QuadEngine>(); e->prepare (sr);
+            auto s = singleUnitSettings (0);
+            s.globalMix = 1.0f; s.softLimiter = false; s.earlyReflections = false;
+            s.echo[0].feedback = 0.0f; s.echo[0].sync = false; s.echo[0].timeL = 300.0f;
+            s.duck.on = true; s.duck.thresholdDb = -30.0f; s.duck.amountDb = 12.0f; s.duck.attackMs = 10.0f; s.duck.releaseMs = 50.0f;
+            s.duck.source = source;
+            auto out = sine ((size_t) sr, sr, 440.0, 0.5f);
+            const auto sc = sine ((size_t) sr, sr, 100.0, 0.5f);
+            for (size_t pos = 0; pos < out.l.size(); pos += 256)
+            {
+                const int n = (int) std::min<size_t> (256, out.l.size() - pos);
+                e->process (out.l.data() + pos, out.r.data() + pos, n, s, 120.0, -1.0,
+                            connected ? sc.l.data() + pos : nullptr, connected ? sc.r.data() + pos : nullptr);
+            }
+            return rms (out.l, (size_t) (0.5 * sr), (size_t) (0.95 * sr));
+        };
+        const float ref = rms (plain.l, (size_t) (0.5 * sr), (size_t) (0.95 * sr));
+        check (std::abs (toDb (runSc (DuckSidechain, true) / ref) + 12.0f) < 1.0f && std::abs (toDb (runSc (DuckSidechain, false) / ref)) < 0.1f
+               && std::abs (toDb (runSc (DuckInput, true) / ref) + 12.0f) < 1.0f,
+               "Ducking Sidechain: lauter Sidechain -12 dB, ohne Sidechain kein Ducking, Quelle Input wie vorher");
     }
 
     // Umrechnung alter Zustaende: Verhaeltnis Original/Echo bleibt
@@ -1647,6 +1686,43 @@ void testAuditFixes()
             return toDb (rms (out.l, (size_t) (0.5 * sr), out.l.size()) / rms (in.l, (size_t) (0.5 * sr), in.l.size()));
         };
         check (std::abs (gfRms (1000.0) + 12.0f) < 0.5f && std::abs (gfRms (100.0)) < 0.5f, "Globaler Filter: Bell-Band -12 dB bei 1 kHz, 100 Hz unveraendert");
+
+        // bellMod: ohne Modulationstiefe bitgleich, mit LFO wandert das Band (Schleife und globaler Filter)
+        auto unitOut = [&] (bool mod, float depth)
+        {
+            DelayUnit u; u.prepare (sr);
+            auto s = wetOnly(); s.timeL = s.timeR = 50.0f; s.feedback = 0.5f; s.rateHz = 2.0f; s.filterDepth = depth;
+            s.bellOn = true; s.bellHz = 1000.0f; s.bellGain = 9.0f; s.bellQ = 2.0f; s.bellMod = mod;
+            return runUnit (u, s, sine ((size_t) sr, sr, 1000.0, 0.1f), 256);
+        };
+        check (unitOut (true, 0.0f).l == unitOut (false, 0.0f).l && unitOut (true, 0.5f).l != unitOut (false, 0.5f).l,
+               "Bell folgt Modulation (Einheit): Tiefe 0 bitgleich, mit LFO anders");
+        auto gfMod = [&] (bool mod)
+        {
+            GlobalFilter gf; gf.prepare (sr);
+            GlobalFilterSettings g; g.bellOn = true; g.bellHz = 1000.0f; g.bellGain = -12.0f; g.bellQ = 2.0f; g.rateHz = 2.0f; g.depth = 0.5f; g.bellMod = mod;
+            auto in = sine ((size_t) sr, sr, 1000.0, 0.5f), out = in;
+            for (size_t pos = 0; pos < in.l.size(); pos += 256)
+            {
+                const int n = (int) std::min<size_t> (256, in.l.size() - pos);
+                gf.beginChunk (g, 120.0, n, -1.0, in.l.data() + pos, in.r.data() + pos);
+                gf.process (0, out.l.data() + pos, out.r.data() + pos, n);
+            }
+            return toDb (rms (out.l, (size_t) (0.5 * sr), out.l.size()) / rms (in.l, (size_t) (0.5 * sr), in.l.size()));
+        };
+        check (std::abs (gfMod (false) + 12.0f) < 0.5f && gfMod (true) > -9.0f, "Bell folgt Modulation (globaler Filter): Kerbe wandert weg von 1 kHz");
+    }
+
+    // DRAW: gezeichnete Stufen ersetzen das Muster (auch bei Pattern Off), bei 8 Stufen nur die ersten 8
+    {
+        EchoSettings d; d.patCustom = true; d.steps = 8;
+        for (int k = 0; k < kMaxSteps; ++k) d.stepVals[(size_t) k] = k < 8 ? 0.1f * (float) k : -1.0f;
+        bool ok = true;
+        for (int k = 0; k < 8; ++k) ok = ok && std::abs (modWaveD (d, (k + 0.5) / 8.0) - 0.1 * k) < 1.0e-6;
+        auto d16 = d; d16.steps = 16;
+        auto off = d; off.patCustom = false;
+        check (ok && modWaveD (d16, 15.5 / 16.0) == -1.0 && modWaveD (off, 0.3) == lfoWaveD (off.wave, 0.3),
+               "DRAW: Stufen 1..8 gelten, bei 16 auch 9..16, aus = LFO-Welle");
     }
 
     // Schritt-Muster: Treppe von -1 nach +1, Random fest je Seed, Glide ohne Spruenge, wirkt auf die Delay-Zeit
@@ -1766,6 +1842,19 @@ void testAuditFixes()
         auto chL = base(); chL.chorus.on = true; chL.chorus.place = ChorusInLoop; chL.echo[0].feedback = 1.0f; chL.echo[0].inGainDb = 12.0f;
         const auto oL = run (chL, sine ((size_t) (3 * sr), sr, 440.0, 0.8f));
         check (dC > 0.01f && finite (oL, 3.0f) && peakAbs (oL.l, (size_t) (2 * sr)) < 2.1f, "Chorus: wirkt auf die Echos, in der Schleife begrenzt");
+
+        // Chorus Rate/Depth/Tone: Tiefe 0 = Rate egal, Rate 2x veraendert, Tone 2 kHz dunkler als 9 kHz
+        auto chorusOut = [&] (float rate, float depth, float tone)
+        {
+            BbdChorus c; c.prepare (sr);
+            auto x = noise ((size_t) sr, 0.3f, 5);
+            for (size_t i = 0; i < x.l.size(); ++i) { c.setTarget (0, 1.0f, rate, depth, tone); c.process (x.l[i], x.r[i], false); }
+            return x.l;
+        };
+        auto hf = [&] (const std::vector<float>& v) { double h = 0, t = 0; for (size_t i = 1; i < v.size(); ++i) { h += (double) (v[i] - v[i - 1]) * (v[i] - v[i - 1]); t += (double) v[i] * v[i]; } return h / t; };
+        check (chorusOut (1.0f, 0.0f, 9000.0f) == chorusOut (4.0f, 0.0f, 9000.0f) && chorusOut (2.0f, 1.0f, 9000.0f) != chorusOut (1.0f, 1.0f, 9000.0f)
+               && hf (chorusOut (1.0f, 1.0f, 2000.0f)) < 0.5 * hf (chorusOut (1.0f, 1.0f, 9000.0f)),
+               "Chorus: Tiefe 0 ohne Bewegung, Rate wirkt, Tone 2 kHz dunkler");
     }
 
     // AUTO LEVEL: Serial A > B > C > D (Echo-Pegel 100 %, Feedback 60 %) bleibt etwa so laut wie A allein

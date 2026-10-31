@@ -113,6 +113,9 @@ inline juce::String tooltipForExpert (const juce::String& id)
     if (is (stInclDry)) return "Off: only the echoes. On: the original is widened too.";
     if (is (chOn)) return "Analog chorus in bucket-brigade style: triangle LFO, opposite on the right, dark and slightly saturated.";
     if (is (chMix)) return "0 = dry, 50% = dry and chorus equally loud (classic), 100% = only chorus.";
+    if (is (chRate)) return "Speed of the chorus relative to its mode (x1 = original, 0.25 to 4).";
+    if (is (chDepth)) return "Depth of the chorus relative to its mode (x1 = original, 0 = no movement, up to x2).";
+    if (is (chTone)) return "Darkness of the bucket brigade: low-pass of the wet signal (9 kHz = original, 2 to 18 kHz).";
     if (is (dkRelease)) return "How fast the echoes come back after you stop.";
     return {};
 }

@@ -6,7 +6,8 @@
 QuadEchoProcessor::QuadEchoProcessor()
     : AudioProcessor (BusesProperties()
                           .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                          .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+                          .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                          .withInput  ("Sidechain", juce::AudioChannelSet::stereo(), false)),
       apvts (*this, &undoManager, "STATE", qe::createLayout()),
       reader (apvts)
 {
@@ -25,6 +26,12 @@ bool QuadEchoProcessor::isBusesLayoutSupported (const BusesLayout& layouts) cons
     const auto& out = layouts.getMainOutputChannelSet();
     if (out != juce::AudioChannelSet::mono() && out != juce::AudioChannelSet::stereo())
         return false;
+    if (layouts.inputBuses.size() > 1)   // Sidechain: aus, mono oder stereo
+    {
+        const auto& sc = layouts.getChannelSet (true, 1);
+        if (! sc.isDisabled() && sc != juce::AudioChannelSet::mono() && sc != juce::AudioChannelSet::stereo())
+            return false;
+    }
     return in == out;
 }
 
@@ -32,12 +39,24 @@ void QuadEchoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 {
     juce::ScopedNoDenormals noDenormals;
 
-    const int numCh = buffer.getNumChannels();
     const int n = buffer.getNumSamples();
     for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear (ch, 0, n);
+    auto main = getBusBuffer (buffer, false, 0);   // Haupt-Bus (Ein = Aus); der Sidechain liegt in eigenen Kanaelen
+    const int numCh = main.getNumChannels();
     if (numCh == 0 || n == 0)
         return;
+    const float* scL = nullptr;
+    const float* scR = nullptr;
+    if (getBusCount (true) > 1)
+    {
+        const auto sc = getBusBuffer (buffer, true, 1);
+        if (sc.getNumChannels() > 0)
+        {
+            scL = sc.getReadPointer (0);
+            scR = sc.getReadPointer (std::min (1, sc.getNumChannels() - 1));
+        }
+    }
 
     reader.read (settings);
 
@@ -56,19 +75,20 @@ void QuadEchoProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     if (numCh >= 2)
     {
-        engine.process (buffer.getWritePointer (0), buffer.getWritePointer (1), n, settings, bpm, ppq);
+        engine.process (main.getWritePointer (0), main.getWritePointer (1), n, settings, bpm, ppq, scL, scR);
     }
     else
     {
         // Mono: intern Stereo (L = R), Ausgang wird heruntergemischt
-        float* mono = buffer.getWritePointer (0);
+        float* mono = main.getWritePointer (0);
         for (int pos = 0; pos < n; pos += kScratch)
         {
             const int len = std::min (kScratch, n - pos);
             std::copy (mono + pos, mono + pos + len, scratchL.begin());
             std::copy (mono + pos, mono + pos + len, scratchR.begin());
             engine.process (scratchL.data(), scratchR.data(), len, settings, bpm,
-                            ppq >= 0.0 ? ppq + (double) pos / getSampleRate() * bpm / 60.0 : -1.0);
+                            ppq >= 0.0 ? ppq + (double) pos / getSampleRate() * bpm / 60.0 : -1.0,
+                            scL != nullptr ? scL + pos : nullptr, scR != nullptr ? scR + pos : nullptr);
             for (int i = 0; i < len; ++i)
                 mono[pos + i] = 0.5f * (scratchL[(size_t) i] + scratchR[(size_t) i]);
         }

@@ -51,6 +51,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<BoolP> (juce::ParameterID { kIdEarly, 1 }, "Early Reflections", true));
     layout.add (std::make_unique<BoolP> (juce::ParameterID { kIdBinaural, 1 }, "Binaural (Headphones)", false));
     layout.add (std::make_unique<FloatP> (juce::ParameterID { kIdDoppler, 1 }, "Doppler", Range (0.0f, 2.0f, 0.01f), 1.0f, unit ("")));
+    layout.add (std::make_unique<FloatP> (juce::ParameterID { kIdBinTone, 1 }, "Binaural Tone", Range (-6.0f, 6.0f, 0.1f), 0.0f, unit ("dB")));
     layout.add (std::make_unique<FloatP> (juce::ParameterID { kIdGlobalFb, 1 }, "Feedback Scale", Range (0.0f, 2.0f, 0.001f), 1.0f, unit ("")));
     layout.add (std::make_unique<BoolP> (juce::ParameterID { kIdLimiter, 1 }, "Soft Limiter", true));
     layout.add (std::make_unique<BoolP> (juce::ParameterID { kIdLimitDry, 1 }, "Limiter On Dry", false));
@@ -86,6 +87,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         g->addChild (std::make_unique<FloatP> (id (gfBellHz), "GF Bell Freq", bellHzRange(), 1000.0f, unit ("Hz")));
         g->addChild (std::make_unique<FloatP> (id (gfBellGain), "GF Bell Gain", Range (-18.0f, 18.0f, 0.1f), 0.0f, unit ("dB")));
         g->addChild (std::make_unique<FloatP> (id (gfBellQ), "GF Bell Q", bellQRange(), 1.0f, unit ("")));
+        g->addChild (std::make_unique<BoolP> (id (gfBellMod), "GF Bell Follows Mod", false));
         layout.add (std::move (g));
     }
 
@@ -128,6 +130,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         g->addChild (std::make_unique<FloatP> (id (nzBellHz), "Noise Bell Freq", bellHzRange(), 1000.0f, unit ("Hz")));
         g->addChild (std::make_unique<FloatP> (id (nzBellGain), "Noise Bell Gain", Range (-18.0f, 18.0f, 0.1f), 0.0f, unit ("dB")));
         g->addChild (std::make_unique<FloatP> (id (nzBellQ), "Noise Bell Q", bellQRange(), 1.0f, unit ("")));
+        g->addChild (std::make_unique<BoolP> (id (nzBellMod), "Noise Bell Follows Mod", false));
         layout.add (std::move (g));
     }
 
@@ -142,6 +145,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         g->addChild (std::make_unique<ChoiceP> (id (chMode), "Chorus Mode", juce::StringArray { "I", "II", "I + II" }, 0));
         g->addChild (std::make_unique<FloatP> (id (chMix), "Chorus Mix", Range (0.0f, 1.0f, 0.001f), 0.5f, unit ("")));
         g->addChild (std::make_unique<ChoiceP> (id (chPlace), "Chorus Place", juce::StringArray { "On Echoes", "In Loop" }, 0));
+        Range chRateRange (0.25f, 4.0f, 0.01f);
+        chRateRange.setSkewForCentre (1.0f);
+        g->addChild (std::make_unique<FloatP> (id (chRate), "Chorus Rate", chRateRange, 1.0f, unit ("x")));
+        g->addChild (std::make_unique<FloatP> (id (chDepth), "Chorus Depth", Range (0.0f, 2.0f, 0.001f), 1.0f, unit ("x")));
+        g->addChild (std::make_unique<FloatP> (id (chTone), "Chorus Tone", Range (2000.0f, 18000.0f, 1.0f, 0.5f), 9000.0f, unit ("Hz")));
         layout.add (std::move (g));
     }
 
@@ -154,6 +162,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         g->addChild (std::make_unique<FloatP> (id (dkAmount), "Ducking Amount", Range (0.0f, 40.0f, 0.1f), 12.0f, unit ("dB")));
         g->addChild (std::make_unique<FloatP> (id (dkAttack), "Ducking Attack", Range (0.1f, 200.0f, 0.01f, 0.4f), 10.0f, unit ("ms")));
         g->addChild (std::make_unique<FloatP> (id (dkRelease), "Ducking Release", Range (20.0f, 3000.0f, 0.1f, 0.4f), 400.0f, unit ("ms")));
+        g->addChild (std::make_unique<ChoiceP> (id (dkSource), "Ducking Source", juce::StringArray { "Input", "Sidechain" }, DuckInput));
         layout.add (std::move (g));
     }
 
@@ -220,6 +229,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
         group->addChild (std::make_unique<FloatP> (id (pBellHz), L + "Bell Freq", bellHzRange(), 1000.0f, unit ("Hz")));
         group->addChild (std::make_unique<FloatP> (id (pBellGain), L + "Bell Gain", Range (-18.0f, 18.0f, 0.1f), 0.0f, unit ("dB")));
         group->addChild (std::make_unique<FloatP> (id (pBellQ), L + "Bell Q", bellQRange(), 1.0f, unit ("")));
+        group->addChild (std::make_unique<BoolP> (id (pBellMod), L + "Bell Follows Mod", false));
+        group->addChild (std::make_unique<BoolP> (id (pPatCustom), L + "Pattern Draw", false));
+        for (int k = 0; k < kMaxSteps; ++k)
+            group->addChild (std::make_unique<FloatP> (id (pStep1 + k), L + "Step " + juce::String (k + 1), Range (-1.0f, 1.0f, 0.001f), 0.0f, unit ("")));
         group->addChild (std::make_unique<ChoiceP> (id (pSyncMode), L + "Sync Mode L", juce::StringArray { "Notes", "Triplet", "Dotted", "16th" }, Sync16th));
         group->addChild (std::make_unique<ChoiceP> (id (pSyncModeR), L + "Sync Mode R", juce::StringArray { "Notes", "Triplet", "Dotted", "16th" }, Sync16th));
         group->addChild (std::make_unique<juce::AudioParameterInt> (id (pSixL), L + "16ths L", 1, kMaxSixteenths, defSix[u]));
@@ -248,6 +261,7 @@ ParamReader::ParamReader (juce::AudioProcessorValueTreeState& apvts)
     early = apvts.getRawParameterValue (kIdEarly);
     binaural = apvts.getRawParameterValue (kIdBinaural);
     doppler = apvts.getRawParameterValue (kIdDoppler);
+    binTone = apvts.getRawParameterValue (kIdBinTone);
     gFb = apvts.getRawParameterValue (kIdGlobalFb);
     limiter = apvts.getRawParameterValue (kIdLimiter);
     limitDry = apvts.getRawParameterValue (kIdLimitDry);
@@ -277,7 +291,9 @@ void ParamReader::readUnit (int u, EchoSettings& c, PosSettings& pos) const
     c.syncMode = i (pSyncMode); c.syncModeR = i (pSyncModeR); c.sixL = i (pSixL); c.sixR = i (pSixR); c.offsetL = f (pOffsetL); c.hpRes = f (pHpRes); c.hpBoost = f (pHpBoost); c.lpBoost = f (pLpBoost);
     c.lfoAmt = f (pLfoAmt); c.envAmt = f (pEnvAmt); c.tape = b (pTape); c.wow = f (pWow);
     c.pattern = i (pPattern); c.steps = i (pSteps) == 0 ? 8 : 16; c.glide = f (pGlide); c.seed = i (pSeed);
-    c.bellOn = b (pBellOn); c.bellHz = f (pBellHz); c.bellGain = f (pBellGain); c.bellQ = f (pBellQ);
+    c.bellOn = b (pBellOn); c.bellHz = f (pBellHz); c.bellGain = f (pBellGain); c.bellQ = f (pBellQ); c.bellMod = b (pBellMod);
+    c.patCustom = b (pPatCustom);
+    for (int k = 0; k < kMaxSteps; ++k) c.stepVals[(size_t) k] = f (pStep1 + k);
     pos = { f (pPosX), f (pPosY), f (pPosZ) };
 }
 
@@ -292,6 +308,7 @@ void ParamReader::read (EngineSettings& s) const
     s.earlyReflections = early->load() > 0.5f;
     s.binaural = binaural->load() > 0.5f;
     s.doppler = doppler->load();
+    s.binToneDb = binTone->load();
     s.feedbackScale = gFb->load();
     s.softLimiter = limiter->load() > 0.5f;
     s.limitDry = limitDry->load() > 0.5f;
@@ -307,18 +324,19 @@ void ParamReader::read (EngineSettings& s) const
     f.hpOn = gb (gfHpOn); f.lpOn = gb (gfLpOn); f.hpHz = gf (gfHp); f.lpHz = gf (gfLp); f.res = gf (gfRes); f.hpRes = gf (gfHpRes); f.hpBoost = gf (gfHpBoost); f.lpBoost = gf (gfLpBoost);
     f.includeDry = gb (gfInclDry); f.skipFirstEcho = gb (gfSkipFirst); f.lfoOn = gb (gfLfoOn); f.wave = gi (gfWave); f.rateHz = gf (gfRate);
     f.lfoSync = gb (gfSync); f.lfoDiv = gi (gfDiv); f.depth = gf (gfDepth); f.phaseDeg = gf (gfPhase); f.envMix = gf (gfEnv);
-    f.bellOn = gb (gfBellOn); f.bellHz = gf (gfBellHz); f.bellGain = gf (gfBellGain); f.bellQ = gf (gfBellQ);
+    f.bellOn = gb (gfBellOn); f.bellHz = gf (gfBellHz); f.bellGain = gf (gfBellGain); f.bellQ = gf (gfBellQ); f.bellMod = gb (gfBellMod);
     auto& n = s.noise;
     n.on = gb (nzOn); n.level = gf (nzLevel); n.color = gf (nzColor); n.crackle = gf (nzCrackle); n.width = gf (nzWidth);
     n.into = gf (nzInto); n.hpOn = gb (nzHpOn); n.lpOn = gb (nzLpOn); n.hpHz = gf (nzHp); n.lpHz = gf (nzLp); n.res = gf (nzRes); n.hpRes = gf (nzHpRes); n.hpBoost = gf (nzHpBoost); n.lpBoost = gf (nzLpBoost);
     n.lfoOn = gb (nzLfoOn); n.wave = gi (nzWave); n.rateHz = gf (nzRate); n.lfoSync = gb (nzSync); n.lfoDiv = gi (nzDiv);
     n.depthF = gf (nzDepthF); n.depthL = gf (nzDepthL); n.phaseDeg = gf (nzPhase); n.envMix = gf (nzEnv);
     n.pos = { gf (nzPosX), gf (nzPosY), gf (nzPosZ) };
-    n.bellOn = gb (nzBellOn); n.bellHz = gf (nzBellHz); n.bellGain = gf (nzBellGain); n.bellQ = gf (nzBellQ);
+    n.bellOn = gb (nzBellOn); n.bellHz = gf (nzBellHz); n.bellGain = gf (nzBellGain); n.bellQ = gf (nzBellQ); n.bellMod = gb (nzBellMod);
     n.panAmt = gf (nzPanAmt); n.panRateHz = gf (nzPanRate); n.panSync = gb (nzPanSync); n.panDiv = gi (nzPanDiv);
     s.stereo.width = gf (stWidth); s.stereo.enhance = gf (stEnhance); s.stereo.includeDry = gb (stInclDry);
     s.chorus.on = gb (chOn); s.chorus.mode = gi (chMode); s.chorus.mix = gf (chMix); s.chorus.place = gi (chPlace);
+    s.chorus.rate = gf (chRate); s.chorus.depth = gf (chDepth); s.chorus.toneHz = gf (chTone);
     auto& d = s.duck;
-    d.on = gb (dkOn); d.thresholdDb = gf (dkThreshold); d.amountDb = gf (dkAmount); d.attackMs = gf (dkAttack); d.releaseMs = gf (dkRelease);
+    d.on = gb (dkOn); d.thresholdDb = gf (dkThreshold); d.amountDb = gf (dkAmount); d.attackMs = gf (dkAttack); d.releaseMs = gf (dkRelease); d.source = gi (dkSource);
 }
 } // namespace qe

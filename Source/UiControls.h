@@ -352,12 +352,12 @@ struct LinkToggle : public juce::ToggleButton
 class FilterGraph : public juce::Component, public juce::SettableTooltipClient
 {
 public:
-    struct Ids { juce::String hpOn, lpOn, hp, lp, hpRes, lpRes, hpBoost, lpBoost, bellOn, bellHz, bellGain, bellQ; };
+    struct Ids { juce::String hpOn, lpOn, hp, lp, hpRes, lpRes, hpBoost, lpBoost, bellOn, bellHz, bellGain, bellQ, bellMod; };
 
     FilterGraph (Apvts& apvts, const Ids& ids, Colour col) : colour (col)
     {
         const juce::String list[kParams] = { ids.hpOn, ids.lpOn, ids.hp, ids.lp, ids.hpRes, ids.lpRes, ids.hpBoost, ids.lpBoost,
-                                             ids.bellOn, ids.bellHz, ids.bellGain, ids.bellQ };
+                                             ids.bellOn, ids.bellHz, ids.bellGain, ids.bellQ, ids.bellMod };
         for (int k = 0; k < kParams; ++k)
         {
             params[(size_t) k] = apvts.getParameter (list[k]);
@@ -365,7 +365,7 @@ public:
                 *params[(size_t) k], [this, k] (float v) { value[(size_t) k] = v; repaint(); }, apvts.undoManager);
             attach[(size_t) k]->sendInitialUpdate();
         }
-        setTooltip ("Drag a point: left/right = frequency, up = boost at the cutoff (up to +18 dB).\nAlt + drag up/down: Q (resonance and width). Shift = fine. Double-click: back to default.\nDouble-click on an empty spot: bell band there (drag = frequency and gain, Alt = width, double-click on it: remove).\nHP / LP boxes top right: filter on/off. 18 dB per octave.");
+        setTooltip ("Drag a point: left/right = frequency, up = boost at the cutoff (up to +18 dB).\nAlt + drag up/down: Q (resonance and width). Shift = fine. Double-click: back to default.\nDouble-click on an empty spot: bell band there (drag = frequency and gain, Alt = width, double-click on it: remove).\nHP / LP boxes top right: filter on/off. 18 dB per octave.\nBELL~ box (top left, with a bell band): the bell frequency follows the filter modulation like HP and LP.");
     }
 
     void paint (juce::Graphics& g) override
@@ -405,6 +405,20 @@ public:
         g.setColour (colour);
         g.strokePath (curve, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
+        // Kaestchen HP / LP (Kopfzeile) und BELL~ (darunter in der Kurve, nur mit Bell-Band: folgt der Filter-Modulation)
+        for (int h = 0; h < (bellOn() ? 3 : 2); ++h)
+        {
+            const auto box = boxBounds (h);
+            const bool on = h == 2 ? value[BellMod] > 0.5f : isOn (h);
+            g.setColour (on ? colour : kPanelHi);
+            g.fillRoundedRectangle (box, 3.0f);
+            g.setColour (on ? colour : kLine);
+            g.drawRoundedRectangle (box.reduced (0.5f), 3.0f, 1.0f);
+            g.setColour (on ? kBg : kDim);
+            g.setFont (ui::uiFont (9.5f, true));
+            g.drawText (h == 0 ? "HP" : h == 1 ? "LP" : "BELL~", box, juce::Justification::centred);
+        }
+
         // Punkte
         for (int h = 0; h < 2; ++h)
         {
@@ -440,7 +454,15 @@ public:
             g.strokePath (d, juce::PathStrokeType (1.2f));
             g.setColour (kText);
             g.setFont (ui::uiFont (9.5f, true));
-            g.drawText ((bellGain() >= 0.0f ? "+" : "") + juce::String (bellGain(), 1) + " dB", juce::Rectangle<float> (p.x - 30.0f, p.y + (bellGain() >= 0.0f ? 8.0f : -20.0f), 60.0f, 12.0f), juce::Justification::centred);
+            const bool up = bellGain() < 0.0f;   // Text ueber der Raute bei Absenkung, sonst darunter
+            const float cx = juce::jlimit (pa.getX() + 45.0f, pa.getRight() - 45.0f, p.x);
+            g.drawText ((bellGain() >= 0.0f ? "+" : "") + juce::String (bellGain(), 1) + " dB", juce::Rectangle<float> (cx - 45.0f, p.y + (up ? -20.0f : 8.0f), 90.0f, 12.0f), juce::Justification::centred);
+            if (showBellInfo || dragged == 2)   // Frequenz und Q: beim Ziehen immer, sonst bei Hover
+            {
+                g.setFont (ui::uiFont (9.5f));
+                g.setColour (kText.withAlpha (0.8f));
+                g.drawText (bellText (bellHz(), bellQ()), juce::Rectangle<float> (cx - 45.0f, p.y + (up ? -32.0f : 20.0f), 90.0f, 12.0f), juce::Justification::centred);
+            }
         }
 
         // Zeile ueber der Kurve: links die Werte, rechts die Kaestchen HP / LP zum An- und Ausschalten
@@ -455,18 +477,6 @@ public:
                                      + (boost (h) > qe::kBoostOffDb ? "  +" + juce::String (boost (h), 1) + " dB" : juce::String());
             g.drawText (txt, juce::Rectangle<float> (line.getX() + (float) h * half, line.getY(), half, line.getHeight()), juce::Justification::centredLeft);
         }
-        for (int h = 0; h < 2; ++h)
-        {
-            const auto box = boxBounds (h);
-            const bool on = isOn (h);
-            g.setColour (on ? colour : kPanelHi);
-            g.fillRoundedRectangle (box, 3.0f);
-            g.setColour (on ? colour : kLine);
-            g.drawRoundedRectangle (box.reduced (0.5f), 3.0f, 1.0f);
-            g.setColour (on ? kBg : kDim);
-            g.setFont (ui::uiFont (9.5f, true));
-            g.drawText (h == 0 ? "HP" : "LP", box, juce::Justification::centred);
-        }
     }
 
     void mouseDown (const juce::MouseEvent& e) override
@@ -478,6 +488,12 @@ public:
                 dragged = -1;
                 return;
             }
+        if (bellOn() && nearest (e.position) < 0 && boxBounds (2).contains (e.position))   // ein Punkt darauf hat Vorrang
+        {
+            attach[BellMod]->setValueAsCompleteGesture (value[BellMod] > 0.5f ? 0.0f : 1.0f);
+            dragged = -1;
+            return;
+        }
         dragged = nearest (e.position);
         moved = false;
         if (dragged < 0) return;
@@ -547,6 +563,18 @@ public:
         if (dragged < 0) return;
         for (int k : gestureParams (dragged)) attach[(size_t) k]->endGesture();
         dragged = -1;
+        repaint();
+    }
+
+    void mouseMove (const juce::MouseEvent& e) override { setBellHover (bellOn() && nearest (e.position) == 2); }
+    void mouseExit (const juce::MouseEvent&) override { setBellHover (false); }
+    void setBellHover (bool on) { if (on != showBellInfo) { showBellInfo = on; repaint(); } }
+
+    // "2.50 kHz  Q 2.0" fuer die Anzeige am Bell-Band
+    static juce::String bellText (float hz, float q)
+    {
+        const juce::String f = hz >= 1000.0f ? juce::String (hz / 1000.0f, hz >= 10000.0f ? 1 : 2) + " kHz" : juce::String (juce::roundToInt (hz)) + " Hz";
+        return f + "  Q " + juce::String (q, q < 1.0f ? 2 : 1);
     }
 
     void mouseDoubleClick (const juce::MouseEvent& e) override
@@ -570,15 +598,16 @@ public:
     }
 
 private:
-    enum { HpOn = 0, LpOn, Hp, Lp, HpRes, LpRes, HpBoost, LpBoost, BellOn, BellHz, BellGain, BellQ, kParams };
+    enum { HpOn = 0, LpOn, Hp, Lp, HpRes, LpRes, HpBoost, LpBoost, BellOn, BellHz, BellGain, BellQ, BellMod, kParams };
     std::vector<int> gestureParams (int h) const { return h == 2 ? std::vector<int> { BellHz, BellGain, BellQ } : std::vector<int> { Hp + h, HpRes + h, HpBoost + h }; }
     static constexpr float kDbTop = 30.0f, kDbBottom = -36.0f;   // oben Platz fuer Resonanz plus Boost
     static constexpr float kFirstOrderDb = -3.0103f;   // Stufe 1. Ordnung bei der Grenzfrequenz
 
-    // Kaestchen HP / LP oben rechts
+    // Kaestchen HP / LP oben rechts, BELL~ oben links in der Kurve (die Kopfzeile behaelt ihre Breite)
     juce::Rectangle<float> boxBounds (int h) const
     {
         const auto line = getLocalBounds().toFloat().reduced (8.0f, 2.0f).removeFromTop (14.0f);
+        if (h == 2) return { plotArea().getX() + 2.0f, plotArea().getY() + 2.0f, 38.0f, 13.0f };
         return { line.getRight() - 66.0f + (float) h * 34.0f, line.getY(), 30.0f, 13.0f };
     }
     // Hoehe des Punktes: Pegel bei der Grenzfrequenz (Resonanz der 2. Ordnung, 1. Ordnung und Boost)
@@ -648,9 +677,89 @@ private:
     std::array<std::unique_ptr<juce::ParameterAttachment>, kParams> attach;
     std::array<float, kParams> value {};
     int dragged = -1;
-    bool moved = false;
+    bool moved = false, showBellInfo = false;
     juce::Point<float> lastPos;
     double logF = 0.0;
     float qDb = 0.0f, boostDb = 0.0f;
+};
+
+// ---------------------------------------------------------------------------
+// Stufen-Editor fuer DRAW (gezeichnetes Schritt-Muster): 16 Balken um die Mittellinie (-1..1).
+// Klicken/Ziehen setzt die Stufe unter der Maus auf die Hoehe der Maus, Doppelklick = 0. Bei 8 Stufen gelten nur die ersten 8.
+class StepEditor : public juce::Component, public juce::SettableTooltipClient
+{
+public:
+    StepEditor (Apvts& apvts, int unit, Colour col) : colour (col)
+    {
+        for (int k = 0; k <= qe::kMaxSteps; ++k)   // 0..15 Stufen, 16 = Stufenzahl (8/16)
+        {
+            auto* p = apvts.getParameter (qe::paramId (unit, k < qe::kMaxSteps ? qe::pStep1 + k : qe::pSteps));
+            attach[(size_t) k] = std::make_unique<juce::ParameterAttachment> (*p, [this, k] (float v) { value[(size_t) k] = v; repaint(); }, apvts.undoManager);
+            attach[(size_t) k]->sendInitialUpdate();
+        }
+        setTooltip ("DRAW: click or drag to set the steps, double-click a step: back to 0. With 8 steps only the first 8 are used.");
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        g.setColour (kBg.withAlpha (0.55f));
+        g.fillRoundedRectangle (getLocalBounds().toFloat(), 6.0f);
+        const auto pa = plotArea();
+        g.setColour (kLine);
+        g.drawHorizontalLine ((int) pa.getCentreY(), pa.getX(), pa.getRight());
+        const float w = pa.getWidth() / (float) qe::kMaxSteps;
+        for (int k = 0; k < qe::kMaxSteps; ++k)
+        {
+            const float v = value[(size_t) k], y = yOf (v);
+            const auto bar = juce::Rectangle<float> (pa.getX() + w * (float) k + 2.0f, std::min (y, pa.getCentreY()), w - 4.0f, std::max (2.0f, std::abs (y - pa.getCentreY())));
+            g.setColour (colour.withAlpha (k < steps() ? 0.85f : 0.2f));
+            g.fillRoundedRectangle (bar, 2.0f);
+            g.setColour (k < steps() ? kDim : kDim.withAlpha (0.35f));
+            g.setFont (ui::uiFont (9.5f));
+            g.drawText (juce::String (k + 1), juce::Rectangle<float> (pa.getX() + w * (float) k, pa.getBottom() + 1.0f, w, 11.0f), juce::Justification::centred);
+        }
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        for (int k = 0; k < qe::kMaxSteps; ++k) attach[(size_t) k]->beginGesture();
+        lastStep = -1;
+        mouseDrag (e);
+    }
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        const int k = stepAt (e.position.x);
+        if (k < 0) return;
+        const float v = juce::jlimit (-1.0f, 1.0f, (plotArea().getCentreY() - e.position.y) / (0.5f * plotArea().getHeight()));
+        // schnelles Ziehen: uebersprungene Stufen zwischen dem letzten und diesem Punkt linear auffuellen
+        const int from = lastStep >= 0 ? lastStep : k;
+        for (int i = std::min (from, k); i <= std::max (from, k); ++i)
+            attach[(size_t) i]->setValueAsPartOfGesture (i == k ? v : lastVal + (v - lastVal) * (float) (i - from) / (float) (k - from));
+        lastStep = k;
+        lastVal = v;
+    }
+    void mouseUp (const juce::MouseEvent&) override { for (int k = 0; k < qe::kMaxSteps; ++k) attach[(size_t) k]->endGesture(); }
+    void mouseDoubleClick (const juce::MouseEvent& e) override
+    {
+        const int k = stepAt (e.position.x);
+        if (k >= 0) attach[(size_t) k]->setValueAsCompleteGesture (0.0f);   // JUCE ruft das nach mouseUp auf: eigene Geste
+    }
+
+private:
+    juce::Rectangle<float> plotArea() const { return getLocalBounds().toFloat().reduced (8.0f, 6.0f).withTrimmedBottom (10.0f); }
+    float yOf (float v) const { const auto pa = plotArea(); return pa.getCentreY() - v * 0.5f * pa.getHeight(); }
+    int steps() const { return value[qe::kMaxSteps] > 0.5f ? 16 : 8; }   // pSteps: 0 = "8", 1 = "16"
+    int stepAt (float x) const
+    {
+        const auto pa = plotArea();
+        if (x < pa.getX() || x >= pa.getRight()) return -1;
+        return std::min (qe::kMaxSteps - 1, (int) ((x - pa.getX()) / pa.getWidth() * (float) qe::kMaxSteps));
+    }
+
+    Colour colour;
+    std::array<std::unique_ptr<juce::ParameterAttachment>, qe::kMaxSteps + 1> attach;
+    std::array<float, qe::kMaxSteps + 1> value {};
+    int lastStep = -1;      // zuletzt gezeichnete Stufe im laufenden Zug
+    float lastVal = 0.0f;
 };
 } // namespace ui

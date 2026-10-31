@@ -31,7 +31,9 @@ public:
     void reset();
     // Stereo in-place, beliebige Blockgroesse. ppq = Songposition am Blockanfang in Vierteln (< 0 = unbekannt oder
     // Wiedergabe steht): LFOs mit Sync richten ihre Phase daran aus.
-    void process (float* l, float* r, int n, const EngineSettings& s, double bpm, double ppq = -1.0);
+    // scL/scR: externer Sidechain (nur fuer das Ducking mit Quelle Sidechain), nullptr = nicht verbunden
+    void process (float* l, float* r, int n, const EngineSettings& s, double bpm, double ppq = -1.0,
+                  const float* scL = nullptr, const float* scR = nullptr);
 
     // Fuer die UI (lockfrei): Spitzenpegel seit dem letzten Abruf (setzt zurueck)
     float takeUnitPeak (int u) { return unitPeaks[(size_t) u].exchange (0.0f); }
@@ -49,8 +51,8 @@ private:
     static constexpr int kClearPerSample = 512;   // verteiltes Loeschen einer ausgeschalteten Einheit: Samples je Leitung pro Audio-Sample
     struct Block { std::array<float, kChunk> l {}, r {}; };
 
-    void processChunk (float* l, float* r, int n, const EngineSettings& s, double bpm, double ppq);
-    void computeDuck (int n, const DuckSettings& d, float* gain);
+    void processChunk (float* l, float* r, int n, const EngineSettings& s, double bpm, double ppq, const float* scL, const float* scR);
+    void computeDuck (int n, const DuckSettings& d, float* gain, const float* scL, const float* scR);
 
     double sr = 44100.0;
     std::array<DelayUnit, kNumUnits> units;
@@ -65,7 +67,7 @@ private:
     std::array<bool, kNumUnits> spatialLive { { false, false, false, false } };
     bool noiseSpatialLive = false;
     std::array<Block, kNumUnits> outs, origs, firsts, spOut, spDry;
-    Block ext, src, origSrc, tmp, origTmp, firstTmp, wetM, noiseRaw, noiseOut, phaseMod;
+    Block ext, src, origSrc, tmp, origTmp, firstTmp, wetM, noiseRaw, noiseOut, phaseMod, scBuf;
     std::array<std::atomic<float>, kNumUnits> unitPeaks;
     std::atomic<float> masterPeak { 0.0f }, duckReduction { 0.0f }, inputPeak { 0.0f };
     float duckEnv = 0.0f, duckDb = 0.0f, duckEnvRel = 0.001f;

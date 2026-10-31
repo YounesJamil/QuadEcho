@@ -7,12 +7,12 @@ class UnitPanel : public juce::Component
 {
 public:
     UnitPanel (QuadEchoProcessor& proc, int unitIndex)
-        : unit (unitIndex), echoDisplay (proc, unitIndex), modDisplay (proc, unitIndex),
+        : unit (unitIndex), echoDisplay (proc, unitIndex), modDisplay (proc, unitIndex), stepEditor (proc.apvts, unitIndex, ui::kModColour),
           filterGraph (proc.apvts, { qe::paramId (unitIndex, qe::pHpOn), qe::paramId (unitIndex, qe::pLpOn), qe::paramId (unitIndex, qe::pHp),
                                      qe::paramId (unitIndex, qe::pLp), qe::paramId (unitIndex, qe::pHpRes), qe::paramId (unitIndex, qe::pRes),
                                      qe::paramId (unitIndex, qe::pHpBoost), qe::paramId (unitIndex, qe::pLpBoost),
                                      qe::paramId (unitIndex, qe::pBellOn), qe::paramId (unitIndex, qe::pBellHz), qe::paramId (unitIndex, qe::pBellGain),
-                                     qe::paramId (unitIndex, qe::pBellQ) },
+                                     qe::paramId (unitIndex, qe::pBellQ), qe::paramId (unitIndex, qe::pBellMod) },
                        ui::unitColour (unitIndex))
     {
         using namespace qe;
@@ -143,6 +143,9 @@ public:
                         { "Off: the LFO wave is used", "Stairs: steps rising over one LFO cycle", "Zigzag: alternating up and down, growing",
                           "Syncopated: 3-3-2 accents", "Random: a fixed random pattern per seed (NEW SEED for another one)" });
             textChoice (pSteps, { "8", "16" }, { "8 steps per LFO cycle", "16 steps per LFO cycle" });
+            toggles[pPatCustom] = std::make_unique<ui::Toggle> (apvts, id (pPatCustom), "DRAW", ui::kModColour);
+            toggles[pPatCustom]->setTooltip ("DRAW: your own steps instead of the chosen pattern (drawn in the box below, each step is automatable).");
+            addChildComponent (*toggles[pPatCustom]);
             auto pill = [&] (ui::FineSlider& b, std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>& att, int p,
                              std::function<juce::String (double)> txt, std::function<double (const juce::String&)> parse, double def, const juce::String& tip)
             {
@@ -184,8 +187,9 @@ public:
 
         addChildComponent (echoDisplay);
         addChildComponent (modDisplay);
+        addChildComponent (stepEditor);
 
-        for (int p : { pSync, pSyncMode, pSyncModeR, pLink, pMode, pLfoSync, pLfoOn, pPattern, pHpOn, pLpOn, pBellOn, pEnv, pDDepth, pFDepth })
+        for (int p : { pSync, pSyncMode, pSyncModeR, pLink, pMode, pLfoSync, pLfoOn, pPattern, pPatCustom, pHpOn, pLpOn, pBellOn, pEnv, pDDepth, pFDepth })
         {
             watchers.push_back (std::make_unique<juce::ParameterAttachment> (
                 *apvts.getParameter (id (p)), [this] (float) { updateVisibility(); }));
@@ -281,12 +285,14 @@ public:
         at (knobs[pEnvAmt].get(), kb (dp, 3));
 
         const auto pc = cardPattern();
-        at (choices[pPattern].get(), juce::Rectangle<int> (pc.getX() + 80, pc.getY() + 7, 420, 26));
-        at (choices[pSteps].get(), juce::Rectangle<int> (pc.getX() + 510, pc.getY() + 7, 80, 26));
-        glideBox.setBounds (pc.getX() + 600, pc.getY() + 10, 100, 20);
-        seedBox.setBounds (pc.getX() + 710, pc.getY() + 10, 90, 20);
-        seedBtn.setBounds (pc.getX() + 808, pc.getY() + 7, 120, 26);
+        at (choices[pPattern].get(), juce::Rectangle<int> (pc.getX() + 80, pc.getY() + 7, 390, 26));
+        at (toggles[pPatCustom].get(), juce::Rectangle<int> (pc.getX() + 476, pc.getY() + 7, 56, 26));
+        at (choices[pSteps].get(), juce::Rectangle<int> (pc.getX() + 538, pc.getY() + 7, 64, 26));
+        glideBox.setBounds (pc.getX() + 610, pc.getY() + 10, 96, 20);
+        seedBox.setBounds (pc.getX() + 712, pc.getY() + 10, 84, 20);
+        seedBtn.setBounds (pc.getX() + 804, pc.getY() + 7, 124, 26);
         modDisplay.setBounds (cardLive());
+        stepEditor.setBounds (cardLive());
     }
 
 private:
@@ -357,17 +363,21 @@ private:
         }
         for (int p : { pDDepth, pFDepth, pEnv, pEnvAmt }) knobs[(size_t) p]->setVisible (! echo);
         // Schritt-Muster: ersetzt die Welle (abgedunkelt); Seed nur fuer Random
+        // DRAW: gezeichnete Stufen ersetzen das Muster; der Editor liegt dann statt der Live-Anzeige in der unteren Karte
+        const bool draw = val (pPatCustom);
         const int pat = (int) (cur (pPattern) + 0.5f);
-        for (auto* c : std::initializer_list<juce::Component*> { choices[pPattern].get(), choices[pSteps].get(), &glideBox, &seedBox, &seedBtn })
+        const bool stepped = pat != PatOff || draw;
+        for (auto* c : std::initializer_list<juce::Component*> { choices[pPattern].get(), toggles[pPatCustom].get(), choices[pSteps].get(), &glideBox, &seedBox, &seedBtn })
             c->setVisible (! echo);
         for (auto* c : std::initializer_list<juce::Component*> { choices[pSteps].get(), &glideBox })
         {
-            c->setEnabled (pat != PatOff);
-            c->setAlpha (pat != PatOff ? 1.0f : 0.45f);
+            c->setEnabled (stepped);
+            c->setAlpha (stepped ? 1.0f : 0.45f);
         }
-        seedBox.setEnabled (pat == PatRandom);
-        seedBox.setAlpha (pat == PatRandom ? 1.0f : 0.45f);
-        if (pat != PatOff) { choices[pWave]->setEnabled (false); choices[pWave]->setAlpha (0.45f); }
+        choices[pPattern]->setAlpha (draw ? 0.45f : 1.0f);
+        seedBox.setEnabled (pat == PatRandom && ! draw);
+        seedBox.setAlpha (pat == PatRandom && ! draw ? 1.0f : 0.45f);
+        if (stepped) { choices[pWave]->setEnabled (false); choices[pWave]->setAlpha (0.45f); }
 
         // Abdunkeln, was gerade nichts bewirkt (bleibt einstellbar)
         auto dimC = [] (juce::Component* c, bool on) { if (c != nullptr) { c->setEnabled (on); c->setAlpha (on ? 1.0f : 0.5f); } };
@@ -379,7 +389,8 @@ private:
         dimC (knobs[pEnv].get(), delayMod || filterMod);
         dimC (knobs[pEnvAmt].get(), (delayMod || filterMod) && cur (pEnv) > 0.001f);
         dimC (knobs[pLfoAmt].get(), (delayMod || filterMod) && lfoOn && cur (pEnv) < 0.999f);
-        modDisplay.setVisible (! echo);
+        modDisplay.setVisible (! echo && ! draw);
+        stepEditor.setVisible (! echo && draw);
     }
 
     int unit = 0;
@@ -404,5 +415,6 @@ private:
     juce::TextButton seedBtn;
     EchoDisplay echoDisplay;
     ModDisplay modDisplay;
+    ui::StepEditor stepEditor;
     ui::FilterGraph filterGraph;
 };

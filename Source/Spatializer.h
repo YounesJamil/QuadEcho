@@ -12,6 +12,7 @@ struct SpatialOptions
     bool earlyReflections = true;
     bool binaural = false;
     float doppler = 1.0f;
+    float binToneDb = 0.0f;   // High-Shelf ab 4 kHz nur im Binaural-Anteil
 };
 
 // Psychoakustische Raumplatzierung einer Einheit (Stereo, in-place).
@@ -55,6 +56,7 @@ private:
     };
 
     void setPeak (Biquad& b, float freq, float gainDb, float q) const;
+    void setHighShelf (Biquad& b, float freq, float gainDb) const;
 
     double sr = 44100.0;
     DelayLine dl[2], er;
@@ -66,6 +68,8 @@ private:
     Shadow shadow[2];
     HrtfPair hrtf;
     float fBm = 0.0f;   // Binaural-Anteil des laufenden Teilblocks
+    Biquad tone[2];     // binTone: High-Shelf nach der HRTF
+    float toneSm = 0.0f, toneSet = 0.0f;   // geglaetteter Shelf-Gain (dB) und der Wert der aktuellen Koeffizienten
     float gPrev[2] = { 1.0f, 1.0f };
     int framePos = 0;   // Position im 16er-Teilblock (Steuerraster), ueber Aufrufe hinweg
     // Steuerwerte des laufenden Teilblocks

@@ -1,5 +1,5 @@
 // Rendert den Plugin-Editor ohne Fenster in eine PNG-Datei (fuer UI-Pruefungen).
-// Aufruf: QuadEchoUiShot out.png [id=wert ...] [expert=0/1] [compact=0/1] [page=0/1] [expertPage=0/1/2] [unit=0..3] [width=1000] [audio=1]
+// Aufruf: QuadEchoUiShot out.png [id=wert ...] [expert=0/1] [compact=0/1] [page=0/1] [expertPage=0/1/2] [unit=0..3] [width=1000] [audio=1] [bellHover=1]
 // Beispiel: QuadEchoUiShot noise.png nz_on=1 expert=1 expertPage=1
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <cstdlib>
@@ -30,7 +30,7 @@ int main (int argc, char** argv)
         else if (key == "unit") proc.apvts.state.setProperty ("uiUnit", val.getIntValue(), nullptr);
         else if (key == "width") width = val.getIntValue();
         else if (key == "audio") audio = val.getIntValue() != 0;
-        else if (key == "link") {}    // wird nach dem Erzeugen des Editors ausgewertet
+        else if (key == "link" || key == "bellHover") {}    // wird nach dem Erzeugen des Editors ausgewertet
         else if (auto* p = proc.apvts.getParameter (key))
             p->setValueNotifyingHost (p->convertTo0to1 (val.getFloatValue()));
         else std::cout << "Unbekannter Parameter: " << key << std::endl;
@@ -96,6 +96,20 @@ int main (int argc, char** argv)
                               << ", rechter Regler bedienbar = " << (rKnob != nullptr && rKnob->isEnabled() ? 1 : 0) << std::endl;
                 }
             else std::cout << "LINK nicht gefunden" << std::endl;
+        }
+    // bellHover=1: alle Filterkurven zeigen Frequenz und Q des Bell-Bands wie bei Hover
+    for (int i = 2; i < argc; ++i)
+        if (juce::String (argv[i]) == "bellHover=1")
+        {
+            std::function<void (juce::Component&)> hover = [&] (juce::Component& c)
+            {
+                for (auto* child : c.getChildren())
+                {
+                    if (auto* fg = dynamic_cast<ui::FilterGraph*> (child)) fg->setBellHover (true);
+                    hover (*child);
+                }
+            };
+            hover (*editor);
         }
     const auto image = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
 

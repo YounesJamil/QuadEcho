@@ -149,7 +149,8 @@ void GlobalFilter::process (int inst, float* l, float* r, int n)
             auto& peakLp = f.peakLp[cc];
             auto& peakBell = f.peakBell[cc];
             const bool bellPk = std::abs (bellBlocks[bi]) > kBoostOffDb;
-            if (bellPk) peakBell.set (sr, std::min (cur.bellHz, maxF), cur.bellQ, bellBlocks[bi]); else peakBell.reset();
+            const float bellF = std::min (cur.bellMod ? std::max (cur.bellHz * fm, 20.0f) : cur.bellHz, maxF);
+            if (bellPk) peakBell.set (sr, bellF, cur.bellQ, bellBlocks[bi]); else peakBell.reset();
             if (cur.hpOn)
             {
                 const float fc = std::min (std::max (cur.hpHz * fm, 20.0f), maxF);

@@ -55,6 +55,8 @@ private:
     std::unique_ptr<ui::IconChoice> routeMode;   // Audio / Phase / Phase + Dry
     ui::FineSlider routeDepth { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> routeDepthAttach;
+    ui::FineSlider binTone { juce::Slider::LinearBar, juce::Slider::TextBoxLeft };   // Helligkeit des Binaural-Anteils
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> binToneAttach;
     std::unique_ptr<juce::ParameterAttachment> routeWatch, limiterWatch;
     PadComponent pad;
     std::unique_ptr<ui::Knob> gMix, gOut, gFb, gDoppler;
@@ -81,7 +83,7 @@ private:
     juce::Label title, subtitle, outLabel, credit;
     std::array<juce::Label, kPosRows> posLabels;
     std::array<juce::Label, 3> posHeads;
-    std::unique_ptr<juce::ParameterAttachment> algoWatch, noiseWatch, distWatch;
+    std::unique_ptr<juce::ParameterAttachment> algoWatch, noiseWatch, distWatch, binWatch;
     std::array<std::unique_ptr<juce::ParameterAttachment>, qe::kNumUnits> onWatch;
     std::unique_ptr<ExpertPanel> expert;
 

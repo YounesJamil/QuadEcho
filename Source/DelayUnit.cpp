@@ -204,7 +204,7 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
     fDepthSm.setTargetValue (s.filterDepth);
     freezeSm.setTargetValue (frozen ? 1.0f : 0.0f);
     tapeSm.setTargetValue (s.tape ? 1.0f : 0.0f);
-    chorus.setTarget (s.chorusMode, s.chorusLoop ? s.chorusMix : 0.0f);
+    chorus.setTarget (s.chorusMode, s.chorusLoop ? s.chorusMix : 0.0f, s.chorusRate, s.chorusDepth, s.chorusToneHz);
     const bool chorusWasLive = chorus.active();
     wowSm.setTargetValue (s.wow);
 
@@ -235,14 +235,15 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
         frameHpPeak = s.hpOn && boostSm[0] > kBoostOffDb;
         frameLpPeak = s.lpOn && boostSm[1] > kBoostOffDb;
         const bool hpPeak = frameHpPeak, lpPeak = frameLpPeak;
-        // Bell-Band: Gain geglaettet (Ein/Aus blendet ueber den Gain), Frequenz fest (folgt nicht der Modulation)
+        // Bell-Band: Gain geglaettet (Ein/Aus blendet ueber den Gain), Frequenz fest oder mit bellMod wie HP/LP moduliert
         bellSm += ((s.bellOn ? s.bellGain : 0.0f) - bellSm) * qCoef;
         frameBell = std::abs (bellSm) > kBoostOffDb;
-        if (frameBell) peakBell.set (sr, std::min (s.bellHz, 0.45f * fs), s.bellQ, bellSm); else peakBell.reset();
         {
             const float modF = (float) std::min (std::max (fModSm, (double) -kMaxModFactor), (double) kMaxModFactor);
             const float fm = std::exp2 (modF * fDepthSm.getCurrentValue() * 2.0f);
             const float maxF = 0.45f * fs;
+            const float bellF = std::min (s.bellMod ? std::max (s.bellHz * fm, 20.0f) : s.bellHz, maxF);
+            if (frameBell) peakBell.set (sr, bellF, s.bellQ, bellSm); else peakBell.reset();
             if (s.hpOn)
             {
                 const float fc = std::min (std::max (s.hpHz * fm, 20.0f), maxF);
@@ -266,11 +267,11 @@ void DelayUnit::process (const float* inL, const float* inR, float* outL, float*
                 const double hpFc = std::min (std::max ((double) s.hpHz * fm, 20.0), (double) maxF);
                 const double lpFc = std::min (std::max ((double) s.lpHz * fm, 100.0), (double) maxF);
                 const std::array<double, 10> key { { (s.hpOn ? 1.0 : 0.0) + (s.lpOn ? 2.0 : 0.0), hpFc, lpFc, qHp, qLp, boostSm[0], boostSm[1],
-                                                      frameBell ? bellSm : 0.0, s.bellHz, s.bellQ } };
+                                                      frameBell ? bellSm : 0.0, bellF, s.bellQ } };
                 if (key != stableKey)
                 {
                     const LoopFilterSpec spec (sr, s.hpOn, hpFc, qHp, boostSm[0], s.lpOn, lpFc, qLp, boostSm[1],
-                                               frameBell ? bellSm : 0.0f, std::min ((double) s.bellHz, (double) maxF), s.bellQ);
+                                               frameBell ? bellSm : 0.0f, bellF, s.bellQ);
                     stableTarget = (float) (1.0 / std::max (1.0, spec.peakFast()));
                     stableKey = key;
                 }

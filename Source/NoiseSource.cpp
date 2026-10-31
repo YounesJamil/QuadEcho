@@ -143,7 +143,8 @@ void NoiseSource::process (float* outL, float* outR, int n, const NoiseSettings&
         const bool hpPeak = frameHpPeak, lpPeak = frameLpPeak;
         bellSm += ((s.bellOn ? s.bellGain : 0.0f) - bellSm) * qCoef;   // Bell-Band, wie in der DelayUnit
         frameBell = std::abs (bellSm) > kBoostOffDb;
-        if (frameBell) peakBell.set (sr, std::min (s.bellHz, maxF), s.bellQ, bellSm); else peakBell.reset();
+        const float bellF = std::min (s.bellMod ? std::max (s.bellHz * fm, 20.0f) : s.bellHz, maxF);
+        if (frameBell) peakBell.set (sr, bellF, s.bellQ, bellSm); else peakBell.reset();
 
         if (s.hpOn)
         {

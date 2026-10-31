@@ -52,6 +52,8 @@ void Spatializer::reset()
     erLp = 0.0f;
     peak[0] = Biquad(); peak[1] = Biquad();
     shadow[0] = Shadow(); shadow[1] = Shadow();
+    tone[0] = Biquad(); tone[1] = Biquad();
+    toneSm = toneSet = 0.0f;
     hrtf.reset();
     gPrev[0] = gPrev[1] = 1.0f;
     framePos = 0;
@@ -70,6 +72,20 @@ void Spatializer::setPeak (Biquad& b, float freq, float gainDb, float q) const
     b.b2 = (1.0f - alpha * A) / a0;
     b.a1 = (-2.0f * cw) / a0;
     b.a2 = (1.0f - alpha / A) / a0;
+}
+
+// RBJ-High-Shelf mit Steilheit S = 1
+void Spatializer::setHighShelf (Biquad& b, float freq, float gainDb) const
+{
+    const float A = std::pow (10.0f, gainDb / 40.0f);
+    const float w0 = 2.0f * kPi * std::min (freq, 0.45f * (float) sr) / (float) sr;
+    const float cw = std::cos (w0), alpha = std::sin (w0) / 2.0f * 1.41421356f, sA = 2.0f * std::sqrt (A) * alpha;
+    const float a0 = (A + 1.0f) - (A - 1.0f) * cw + sA;
+    b.b0 = A * ((A + 1.0f) + (A - 1.0f) * cw + sA) / a0;
+    b.b1 = -2.0f * A * ((A - 1.0f) + (A + 1.0f) * cw) / a0;
+    b.b2 = A * ((A + 1.0f) + (A - 1.0f) * cw - sA) / a0;
+    b.a1 = 2.0f * ((A - 1.0f) - (A + 1.0f) * cw) / a0;
+    b.a2 = ((A + 1.0f) - (A - 1.0f) * cw - sA) / a0;
 }
 
 void Spatializer::process (float* l, float* r, int n, const PosSettings& p, const SpatialOptions& o)
@@ -150,6 +166,12 @@ void Spatializer::process (float* l, float* r, int n, const PosSettings& p, cons
         if (bm > 0.0f || o.binaural)
             hrtf.setDirection (azimuth * 57.29578f, elevation * 57.29578f, lateralFade);
         fBm = bm;
+        // binTone: Gain je Teilblock geglaettet; bei 0 dB laeuft kein Filter (alte Presets bitgleich)
+        const float toneT = clampf (o.binToneDb, -6.0f, 6.0f);
+        toneSm += (toneT - toneSm) * 0.05f;
+        if (std::abs (toneT - toneSm) < 1.0e-3f) toneSm = toneT;
+        if (toneSm == 0.0f) { if (toneSet != 0.0f) { tone[0] = Biquad(); tone[1] = Biquad(); toneSet = 0.0f; } }
+        else if (toneSm != toneSet) { setHighShelf (tone[0], 4000.0f, toneSm); setHighShelf (tone[1], 4000.0f, toneSm); toneSet = toneSm; }
 
         // ---- Mischung der Modi (weich beim Umschalten) ----
         float aw[2], fc[2];
@@ -221,6 +243,7 @@ void Spatializer::process (float* l, float* r, int n, const PosSettings& p, cons
             {
                 float hl = l3, hr = r3;
                 hrtf.process (hl, hr);
+                if (toneSet != 0.0f) { hl = tone[0].tick (hl); hr = tone[1].tick (hr); }
                 l3 += (hl - l3) * fBm;
                 r3 += (hr - r3) * fBm;
             }

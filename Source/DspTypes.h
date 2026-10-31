@@ -31,9 +31,11 @@ enum Transition { Repitch = 0, Fade, Jump };
 enum SyncMode { SyncNotes = 0, SyncTriplet, SyncDotted, Sync16th };   // wie Ableton Echo
 enum RouteMode { RouteAudio = 0, RoutePhase, RoutePhaseDry };
 constexpr float kMaxRouteMs = 10.0f;   // Phase Depth 100 %; Regler quadratisch (25 % = 0,6 ms)
+enum DuckSource { DuckInput = 0, DuckSidechain };
 enum Pattern { PatOff = 0, PatStairs, PatZigzag, PatSync, PatRandom };   // Schritt-Muster statt LFO-Welle
 enum LfoWave { Sine = 0, Triangle, SawUp, SawDown, Square, SmoothRandom };
 constexpr int kNumWaves = 6;
+constexpr int kMaxSteps = 16;   // Stufen eines Schritt-Musters (gezeichnet: step1..step16)
 
 struct EchoSettings
 {
@@ -72,11 +74,15 @@ struct EchoSettings
     int steps = 16;             // Stufen je Zyklus (8 oder 16)
     float glide = 0.0f;         // 0 = springt, 1 = gleitet ueber die ganze Stufe
     int seed = 1;               // Random-Muster
+    bool patCustom = false;     // DRAW: gezeichnete Stufen statt des gewaehlten Musters
+    std::array<float, kMaxSteps> stepVals {};   // gezeichnete Stufen -1..1 (bei 8 Stufen nur die ersten 8)
     bool bellOn = false;        // freies Bell-Band in der Feedback-Schleife (Glocke, Frequenz/Gain/Q frei)
     float bellHz = 1000.0f, bellGain = 0.0f, bellQ = 1.0f;
+    bool bellMod = false;           // Bell-Frequenz folgt der Filter-Modulation wie HP/LP
     bool chorusLoop = false;    // Chorus in der Schleife (von der Engine aus den globalen Chorus-Einstellungen gesetzt)
     int chorusMode = 0;
     float chorusMix = 0.5f;
+    float chorusRate = 1.0f, chorusDepth = 1.0f, chorusToneHz = 9000.0f;
     float wow = 0.0f;           // Wow/Flutter 0..1: Bandlauf-Schwankung der Lesestelle (unabhaengig vom LFO)
     bool tape = false;          // TAPE: Schreibweg (Eingang + Feedback) mit Band-Charakter statt tanh, siehe Tape.h
 };
@@ -106,6 +112,7 @@ struct GlobalFilterSettings
     float envMix = 0.0f;            // Modulationsquelle: 0 = LFO, 1 = Huellkurve des Eingangs (wie bei der Noise)
     bool bellOn = false;            // freies Bell-Band
     float bellHz = 1000.0f, bellGain = 0.0f, bellQ = 1.0f;
+    bool bellMod = false;           // Bell-Frequenz folgt der Filter-Modulation wie HP/LP
 };
 
 // Noise-Quelle (Expert-Modus)
@@ -131,6 +138,7 @@ struct NoiseSettings
     PosSettings pos { 0.0f, 0.2f, 0.0f };
     bool bellOn = false;            // freies Bell-Band
     float bellHz = 1000.0f, bellGain = 0.0f, bellQ = 1.0f;
+    bool bellMod = false;           // Bell-Frequenz folgt der Filter-Modulation wie HP/LP
     float panAmt = 0.0f;            // Auto-Pan (Sinus): 0 = aus, 1 = ganz links bis ganz rechts
     float panRateHz = 0.5f;
     bool panSync = false;
@@ -145,6 +153,7 @@ struct DuckSettings
     float amountDb = 12.0f;         // maximale Absenkung
     float attackMs = 10.0f;
     float releaseMs = 400.0f;
+    int source = DuckInput;         // Steuersignal: Eingang oder externer Sidechain (ohne Sidechain: Stille = kein Ducking)
 };
 
 // Stereo (Expert): Breite und Enhance der Echos, mit "Include dry" auch des Originals
@@ -163,6 +172,9 @@ struct ChorusSettings
     int mode = 0;                   // 0 = I, 1 = II, 2 = I + II
     float mix = 0.5f;
     int place = ChorusOnEchoes;
+    float rate = 1.0f;              // Faktor auf die Geschwindigkeit des Modus (0,25..4)
+    float depth = 1.0f;             // Faktor auf die Tiefe des Modus (0..2)
+    float toneHz = 9000.0f;         // Tiefpass der Eimerkette (2..18 kHz)
 };
 
 struct EngineSettings
@@ -181,6 +193,7 @@ struct EngineSettings
     bool earlyReflections = true;
     bool binaural = false;        // Kopfhoerer-Modus (Kugel-Kopf-Modell)
     float doppler = 1.0f;         // 0..2, wirkt mit distanceDelay
+    float binToneDb = 0.0f;       // Helligkeit des Binaural-Anteils: High-Shelf ab 4 kHz, -6..+6 dB
     float feedbackScale = 1.0f;   // globaler Feedback-Faktor 0..2 (1 = wie in den Einheiten)
     bool softLimiter = true;
     bool limitDry = false;        // Limiter auch auf das Original; aus = Original unangetastet, nur die Echos werden begrenzt
@@ -367,17 +380,18 @@ inline double stepWaveD (const EchoSettings& s, double t)
     const int steps = s.steps == 8 ? 8 : 16;
     const double p = (t - std::floor (t)) * (double) steps;
     const int k = std::min ((int) p, steps - 1);
-    const double a = patternStep (s.pattern, steps, s.seed, k);
+    auto step = [&s, steps] (int i) { return s.patCustom ? (double) s.stepVals[(size_t) i] : patternStep (s.pattern, steps, s.seed, i); };
+    const double a = step (k);
     if (s.glide <= 0.0f) return a;
     const double gl = (double) std::min (s.glide, 1.0f), frac = p - (double) k;
     const double w = std::min (std::max ((frac - (1.0 - gl)) / gl, 0.0), 1.0);
     if (w <= 0.0) return a;
-    const double b = patternStep (s.pattern, steps, s.seed, (k + 1) % steps);
+    const double b = step ((k + 1) % steps);
     return a + (b - a) * (0.5 - 0.5 * std::cos (3.141592653589793 * w));
 }
 
 // Modulationsquelle der Einheit: Schritt-Muster oder LFO-Welle
-inline double modWaveD (const EchoSettings& s, double t) { return s.pattern != PatOff ? stepWaveD (s, t) : lfoWaveD (s.wave, t); }
+inline double modWaveD (const EchoSettings& s, double t) { return s.pattern != PatOff || s.patCustom ? stepWaveD (s, t) : lfoWaveD (s.wave, t); }
 
 // Koeffizienten der Saettigungen: werden einmal pro Teilblock berechnet, nicht pro Sample
 struct SatCoefs

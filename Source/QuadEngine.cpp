@@ -93,10 +93,19 @@ void QuadEngine::reset()
 
 // Ducking: Spitzenpegel des Eingangs -> Absenkung in dB (weiches Knie +-3 dB um den Threshold),
 // mit Attack (Absenken) und Release (Zurueckkommen) geglaettet
-void QuadEngine::computeDuck (int n, const DuckSettings& d, float* gain)
+void QuadEngine::computeDuck (int n, const DuckSettings& d, float* gain, const float* scL, const float* scR)
 {
+    // Quelle Sidechain: dessen Samples (nicht endliche = Stille), ohne verbundenen Sidechain Stille
+    if (d.source == DuckSidechain)
+        for (int i = 0; i < n; ++i)
+        {
+            const float a = scL != nullptr ? scL[i] : 0.0f, b = scR != nullptr ? scR[i] : 0.0f;
+            scBuf.l[(size_t) i] = std::isfinite (a) ? a : 0.0f;
+            scBuf.r[(size_t) i] = std::isfinite (b) ? b : 0.0f;
+        }
+    const auto& key = d.source == DuckSidechain ? scBuf : ext;   // Steuersignal
     float inPk = 0.0f;   // auch ohne Ducking: die Anzeige hilft, den Threshold vorab einzustellen
-    for (int i = 0; i < n; ++i) inPk = std::max ({ inPk, std::abs (ext.l[(size_t) i]), std::abs (ext.r[(size_t) i]) });
+    for (int i = 0; i < n; ++i) inPk = std::max ({ inPk, std::abs (key.l[(size_t) i]), std::abs (key.r[(size_t) i]) });
     if (inPk > inputPeak.load (std::memory_order_relaxed)) inputPeak.store (inPk, std::memory_order_relaxed);
     if (! d.on && duckDb > -1.0e-3f)
     {
@@ -111,7 +120,7 @@ void QuadEngine::computeDuck (int n, const DuckSettings& d, float* gain)
     for (int i = 0; i < n; ++i)
     {
         const auto ui = (size_t) i;
-        const float a = std::max (std::abs (ext.l[ui]), std::abs (ext.r[ui]));
+        const float a = std::max (std::abs (key.l[ui]), std::abs (key.r[ui]));
         duckEnv = a > duckEnv ? a : duckEnv + (a - duckEnv) * duckEnvRel;   // haelt auch tiefe Toene
         float target = 0.0f;
         if (d.on)
@@ -127,7 +136,7 @@ void QuadEngine::computeDuck (int n, const DuckSettings& d, float* gain)
         duckReduction.store (-deepest, std::memory_order_relaxed);
 }
 
-void QuadEngine::process (float* l, float* r, int n, const EngineSettings& s, double bpm, double ppq)
+void QuadEngine::process (float* l, float* r, int n, const EngineSettings& s, double bpm, double ppq, const float* scL, const float* scR)
 {
     // Denormals (Filter- und Raumzustaende im Ausklang) kosten ohne FTZ/DAZ ein Vielfaches an Rechenzeit:
     // die Engine setzt die Flags selbst, auch ausserhalb von processBlock (Tests, andere Hosts der Engine)
@@ -140,10 +149,11 @@ void QuadEngine::process (float* l, float* r, int n, const EngineSettings& s, do
     }
     for (int pos = 0; pos < n; pos += kChunk)
         processChunk (l + pos, r + pos, std::min (kChunk, n - pos), s, bpm,
-                      ppq >= 0.0 ? ppq + (double) pos / sr * bpm / 60.0 : -1.0);
+                      ppq >= 0.0 ? ppq + (double) pos / sr * bpm / 60.0 : -1.0,
+                      scL != nullptr ? scL + pos : nullptr, scR != nullptr ? scR + pos : nullptr);
 }
 
-void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& s, double bpm, double ppq)
+void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& s, double bpm, double ppq, const float* scL, const float* scR)
 {
     const int requested = std::min (std::max (s.algorithm, 0), kNumAlgorithms - 1);
     const int requestedRoute = std::min (std::max (s.routeMode, 0), (int) RoutePhaseDry);
@@ -203,6 +213,7 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
     so.earlyReflections = s.earlyReflections;
     so.binaural = s.binaural;
     so.doppler = s.doppler;
+    so.binToneDb = s.binToneDb;
 
     gfilter.beginChunk (s.gfilter, bpm, n, ppq, ext.l.data(), ext.r.data());
     const bool gfOn = gfilter.active();
@@ -230,7 +241,7 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
         dryGa[(size_t) i] = std::cos (m * 1.57079632679f);
         wetGa[(size_t) i] = std::sin (m * 1.57079632679f);
     }
-    computeDuck (n, s.duck, duckGa.data());
+    computeDuck (n, s.duck, duckGa.data(), scL, scR);
 
     // Phase-Modus: eine gespeiste Einheit bekommt den Eingang (Traeger); ihre Quellen verschieben nur ihre Lesestelle,
     // mit dem Echo-Anteil (Phase) oder dem ganzen Ausgang inklusive Original (Phase + Dry), gemittelt wie im Audio-Modus
@@ -344,6 +355,7 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
             es.chorusLoop = s.chorus.on && s.chorus.place == ChorusInLoop;
             es.chorusMode = s.chorus.mode;
             es.chorusMix = s.chorus.mix;
+            es.chorusRate = s.chorus.rate; es.chorusDepth = s.chorus.depth; es.chorusToneHz = s.chorus.toneHz;
             units[uu].setSongPosition (ppq);
             units[uu].process (src.l.data(), src.r.data(), tmp.l.data(), tmp.r.data(), n, es, bpm,
                                nullptr, nullptr,
@@ -576,7 +588,8 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
     if (gfOn) gfilter.process (5, dryFL.data(), dryFR.data(), n);   // "Include dry": Original mitfiltern (weich ueberblendet)
 
     // Chorus auf der Summe der Echos (mit leisem Rauschen der Eimerkette)
-    echoChorus.setTarget (s.chorus.mode, s.chorus.on && s.chorus.place == ChorusOnEchoes ? s.chorus.mix : 0.0f);
+    echoChorus.setTarget (s.chorus.mode, s.chorus.on && s.chorus.place == ChorusOnEchoes ? s.chorus.mix : 0.0f,
+                          s.chorus.rate, s.chorus.depth, s.chorus.toneHz);
     if (echoChorus.active())
     {
         for (int i = 0; i < n; ++i) echoChorus.process (busL[(size_t) i], busR[(size_t) i], true);

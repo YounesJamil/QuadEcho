@@ -19,7 +19,8 @@ public:
         sr = sampleRate;
         len = (int) std::ceil (0.012 * sr) + 4;
         for (auto& b : buf) b.assign ((size_t) len, 0.0f);
-        lpA = 1.0f - std::exp (-6.2831853f * 9000.0f / (float) sr);
+        lpHz = 9000.0f;
+        lpA = 1.0f - std::exp (-6.2831853f * lpHz / (float) sr);
         mixSm.reset (sampleRate, 0.05);
         initialised = false;
         reset();
@@ -36,10 +37,14 @@ public:
 
     // mix: Ziel (0 = aus, wird weich ausgeblendet); noise: Rauschen der Eimerkette (nur einmal im Signalweg sinnvoll)
     bool active() const { return mixSm.isSmoothing() || mixSm.getCurrentValue() > 0.0f; }
-    void setTarget (int modeIn, float mix)
+    // rate/depth: Faktoren auf Geschwindigkeit und Tiefe des Modus; toneHz: Tiefpass der Eimerkette
+    void setTarget (int modeIn, float mix, float rate, float depthF, float toneHz)
     {
         mode = std::min (std::max (modeIn, 0), 2);
-        if (! initialised) { mixSm.setCurrentAndTargetValue (mix); initialised = true; }
+        rateF = std::min (std::max (rate, 0.25f), 4.0f);
+        depthTarget = std::min (std::max (depthF, 0.0f), 2.0f);
+        if (toneHz != lpHz) { lpHz = toneHz; lpA = 1.0f - std::exp (-6.2831853f * std::min (std::max (toneHz, 2000.0f), 18000.0f) / (float) sr); }
+        if (! initialised) { mixSm.setCurrentAndTargetValue (mix); depthSm = depthTarget; initialised = true; }
         mixSm.setTargetValue (mix);
     }
 
@@ -48,10 +53,11 @@ public:
         static constexpr double rates[3] = { 0.5, 0.83, 8.0 };     // Hz
         static constexpr float centre[3] = { 3.5f, 3.5f, 3.3f };    // ms
         static constexpr float depth[3] = { 1.8f, 1.8f, 0.3f };     // ms
-        phase += rates[mode] / sr;
+        phase += rates[mode] * (double) rateF / sr;
         if (phase >= 1.0) phase -= 1.0;
         const float tri = (float) (phase < 0.5 ? 4.0 * phase - 1.0 : 3.0 - 4.0 * phase);   // Dreieck -1..1
         const float m = mixSm.getNextValue();
+        depthSm += (depthTarget - depthSm) * 0.002f;   // Tiefe weich nachfuehren (Spruenge der Lesestelle knacken)
 
         float in[2] = { l, r };
         float wet[2];
@@ -59,7 +65,7 @@ public:
         {
             auto& b = buf[(size_t) c];
             b[(size_t) pos] = in[c];
-            const float dMs = centre[mode] + (c == 0 ? tri : -tri) * depth[mode];
+            const float dMs = centre[mode] + (c == 0 ? tri : -tri) * depth[mode] * depthSm;
             float d = dMs * 0.001f * (float) sr;
             d = std::min (std::max (d, 1.0f), (float) (len - 3));
             const int di = (int) d;
@@ -91,7 +97,8 @@ private:
     int len = 1, pos = 0, mode = 0;
     std::array<std::vector<float>, 2> buf;
     float lp[4] = { 0, 0, 0, 0 };
-    float lpA = 1.0f;
+    float lpA = 1.0f, lpHz = 9000.0f;
+    float rateF = 1.0f, depthTarget = 1.0f, depthSm = 1.0f;
     uint32_t noiseState = 0x2545F491u;
     juce::SmoothedValue<float> mixSm;
     bool initialised = false;
