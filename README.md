@@ -26,7 +26,7 @@ cmake --build build --config Release --parallel --target QuadEchoTests
 build\QuadEchoTests_artefacts\Release\QuadEchoTests.exe test-renders
 ```
 
-671 Prüfungen (inkl. Regressionstests zum DSP-Audit): Delay-Zeiten bei 44,1-192 kHz, Feedback, Modulation, Klickfreiheit, Algorithmen, 3D-Platzierung, Binaural, Doppler, Mute/Solo/Output-aus, Place Dry, analoger Drive, Drive in der Schleife, globaler Filter, Noise, Limiter, Feedback-Bremse, Dry/Wet-Konzept (100 % Wet ohne Original, auch in Ketten), Freeze, Ducking, Umrechnung alter Zustände, Platzierung bei ausgeschalteter Ausgangseinheit, Sync-Modi (Notes/Triplet/Dotted/16th), Offset und Sync-Modus je Kanal, Filtersteilheit 18 dB/Oktave, Filter-Boost, Random-LFO, Stereo-Phase des globalen Filters, Tape, Wow/Flutter, Routing-Modus Phase, Bell-Band, Schritt-Muster, Stereo-Bühne, Solo-Pegel, Freeze All, Stereo/Enhance, Chorus, Fuzz auf NaN/Inf, CPU-Last. Zusätzlich 60 WAV-Renders nach `test-renders/` (nicht im Git).
+673 Prüfungen (inkl. Regressionstests zum DSP-Audit): Delay-Zeiten bei 44,1-192 kHz, Feedback, Modulation, Klickfreiheit, Algorithmen, 3D-Platzierung, Binaural, Doppler, Mute/Solo/Output-aus, Place Dry, analoger Drive, Drive in der Schleife, globaler Filter, Noise, Limiter, Feedback-Bremse, Dry/Wet-Konzept (100 % Wet ohne Original, auch in Ketten), Freeze, Ducking, Umrechnung alter Zustände, Platzierung bei ausgeschalteter Ausgangseinheit, Sync-Modi (Notes/Triplet/Dotted/16th), Offset und Sync-Modus je Kanal, Filtersteilheit 18 dB/Oktave, Filter-Boost, Random-LFO, Stereo-Phase des globalen Filters, Tape, Wow/Flutter, Routing-Modus Phase, Bell-Band, Schritt-Muster, Stereo-Bühne, Solo-Pegel, Freeze All, Auto Level, Stereo/Enhance, Chorus, Fuzz auf NaN/Inf, CPU-Last. Zusätzlich 60 WAV-Renders nach `test-renders/` (nicht im Git).
 
 UI-Pruefung ohne Fenster: `QuadEchoUiShot` rendert den Editor in ein PNG, z. B. `QuadEchoUiShot.exe noise.png expert=1 expertPage=1 nz_on=1 audio=1` (Parameter als `id=wert`, siehe Parameterliste).
 
@@ -97,7 +97,7 @@ Jede Einheit arbeitet wie ein Effektpedal: Das durchlaufende Signal bleibt unver
 
 Wie viel **Original** am Ausgang zu hören ist, bestimmt allein **Global Dry/Wet** (Equal-Power): 0 % = nur Original, 50 % = gleich laut (Standard), 100 % = nur Echos, z. B. auf einem Send-Kanal. Das gilt in jedem Algorithmus. Dafür läuft intern eine Spur des reinen Originals durch die Einheiten mit, und am Ausgang wird sie von den Echos getrennt.
 
-Achtung bei langen Ketten: Vier Einheiten in Serie mit Echo level 100 % und viel Feedback addieren sich wie vier Pedale hintereinander und werden laut. Dann den Echo level der Einheiten senken.
+Achtung bei langen Ketten: Vier Einheiten in Serie mit Echo level 100 % und viel Feedback addieren sich wie vier Pedale hintereinander und werden laut. Dann den Echo level der Einheiten senken oder `AUTO LEVEL` (Master) einschalten.
 
 Alte Projekte (vor dieser Änderung gespeichert) werden beim Laden automatisch umgerechnet, so dass das Verhältnis von Original zu Echos erhalten bleibt.
 
@@ -119,7 +119,7 @@ Rechts daneben, in der Karte **POSITION & ROOM**, stehen die genauen Werte X/Y/Z
 
 Nur Einheiten, die im Algorithmus zum Ausgang gehören, haben eine hörbare Position. Alle anderen Punkte sind ausgegraut (gestrichelter Ring) und nicht ziehbar. Bei "Parallel" sind alle vier aktiv, bei "Serial" nur D. **Ist eine Ausgangseinheit aus**, reicht sie nur durch: Dann übernimmt die Einheit davor ihre Position (bei "Serial" mit D aus also C, mit C und D aus B). Speisen mehrere Einheiten die ausgeschaltete, werden sie alle zu gleichen Teilen platziert. Ausgänge, in deren Zweig noch gar nichts an ist, bleiben ziehbar, damit man sie vorab platzieren kann.
 
-**Z (Höhe)** färbt den Klang: Peak (oben) oder Senke (unten) zwischen 6 und 10 kHz, +/-5 dB. Es ändert weder Lautstärke noch Entfernung. Im Binaural-Modus verringert eine hohe Position zusätzlich die seitliche Wirkung.
+**Z (Höhe):** In Stereo färbt sie den Klang (Peak oben bzw. Senke unten zwischen 6 und 10 kHz, +/-5 dB), ohne Lautstärke oder Entfernung zu ändern. Im Binaural-Modus kommt die Höhe aus der gemessenen HRTF (+/-45 Grad).
 
 ### Psychoakustik der Platzierung
 
@@ -128,7 +128,7 @@ Im Raum platziert werden die **Echos**. Das Original bleibt in der Mitte. Mit `P
 - **Entfernung (Stereo-Bühne):** Die vordere Hälfte bleibt präsent (Mitte ca. -1,8 dB), nach hinten bis 2,8 m (-9 dB), dazu weniger Höhen, schmaler und mehr frühe Reflexionen; X ändert den Pegel nicht.
 - **Entfernung (Binaural):** Bis zum 2. Ring bleibt eine Quelle nah und präsent (1 bis 1,4 m, höchstens -3 dB, kaum Luftdämpfung). Danach greift die Entfernung steil: äußerer Ring 4 m (-12 dB), Ecken ca. 5,6 m (-15 dB). Dazu Luftabsorption (Tiefpass), schmalere Stereobreite, optional frühe Reflexionen und Laufzeit.
 - **Stereo-Modus:** Equal-Power-Pan nach X, Laufzeitdifferenz bis 0,6 ms, Höhenverlust am abgewandten Ohr. Ein „hinter mir“ gibt es im Stereofeld nicht, Y ist dort die Bühnentiefe.
-- **Binaural (Kopfhörer):** Kugel-Kopf-Modell. Laufzeitdifferenz nach Woodworth (bis 0,66 ms), Kopfschatten nach Brown/Duda, Ohrmuschel-Dämpfung hinten, Höhenfärbung. Nur mit Kopfhörern sinnvoll, auf Lautsprechern klingt es seltsam.
+- **Binaural (Kopfhörer):** gemessene HRTF eines Kunstkopfs (MIT KEMAR, siehe Danksagung), diffusfeld-entzerrt: Pegel- und Klangunterschiede der Ohren, vorne/hinten und Höhe wie gemessen, zwischen den Messrichtungen interpoliert und beim Bewegen weich überblendet. Laufzeitdifferenz nach Woodworth (bis 0,66 ms). Nur mit Kopfhörern sinnvoll, auf Lautsprechern klingt es seltsam.
 - Alle Positionen werden mit 50 ms geglättet, es gibt kein Zippern.
 
 ### Globale Regler
@@ -141,6 +141,7 @@ Im Raum platziert werden die **Echos**. Das Original bleibt in der Mitte. Mit `P
 | Global Output | Master-Pegel hinter dem Routing |
 | Feedback Scale | skaliert die Feedbacks aller vier Einheiten gemeinsam, 0-200 % (100 % = wie eingestellt; runterziehen lässt die Echos ausklingen, über 100 % wachsen sie bis in die Sättigung) |
 | LIMITER | weicher Limiter am Ende, hält Spitzen unter 0 dBFS |
+| AUTO LEVEL | hält Ketten etwa so laut wie eine einzelne Einheit: der Echo-Anteil jeder Einheit, die von einer anderen gespeist wird, wird um das zurückgenommen, was sie hinzufügt (aus Echo-Pegel und Feedback). Aus (Standard) = Pedal-Verhalten, Ketten werden lauter |
 | FREEZE ALL | friert alle Einheiten auf einmal ein (zusätzlich zu ihren eigenen `FREEZE`-Schaltern); die Chips zeigen den eisblauen Ring |
 | ON DRY | Limiter auch auf das Original. Aus (Standard): das Original bleibt unangetastet, nur die Echos werden in den verbleibenden Platz unter 0 dBFS gedrückt. Ältere Projekte laden mit ON DRY an und klingen wie vorher. Unabhängig davon begrenzt eine Notbremse den Ausgang immer auf höchstens +6 dBFS (darunter bis +4 dBFS unverändert). |
 
@@ -185,7 +186,7 @@ Gleiche Funktion = gleiches Symbol und gleiche Farbe: **Dry** hat ein neutrales 
 
 ## Parameterliste
 
-Je Einheit (Präfix `a_` bis `d_`, 60 Parameter), global 13 Parameter und im Expert-Bereich 68. Alle sind automatisierbar und werden im Host-Zustand gespeichert.
+Je Einheit (Präfix `a_` bis `d_`, 60 Parameter), global 14 Parameter und im Expert-Bereich 68. Alle sind automatisierbar und werden im Host-Zustand gespeichert.
 
 ### Echo-Seite
 
@@ -255,6 +256,7 @@ Je Einheit (Präfix `a_` bis `d_`, 60 Parameter), global 13 Parameter und im Exp
 | `gMix` | Global Dry/Wet (einziger Regler für das Original) | 0-100 % | 50 % |
 | `gOut` | Global Output | -24..+12 dB | 0 |
 | `freezeAll` | Freeze All (alle Einheiten halten) | an/aus | aus |
+| `autoLevel` | Auto Level (Ketten nicht lauter als eine Einheit) | an/aus | aus |
 | `routeMode` | Routing-Modus: Audio (Einheiten speisen sich), Phase (die Echos der Quelle verschieben die Lesestelle der gespeisten Einheit, die den Eingang bekommt), Phase + Dry (ganzer Ausgang der Quelle inkl. Original) | 3 Stufen | Audio |
 | `routeDepth` | Phase Depth (Lese-Verschiebung bei Vollaussteuerung, quadratisch: 25 % = 0,6 ms, 100 % = 10 ms) | 0-100 % | 25 % |
 | `gFb` | Feedback Scale (über 100 % wachsen die Wiederholungen bis in die Sättigung) | 0-200 % | 100 % |
@@ -294,7 +296,7 @@ Je Einheit (Präfix `a_` bis `d_`, 60 Parameter), global 13 Parameter und im Exp
 
 - `Source/DelayUnit.*`: eine Echo-Einheit. Hermite-interpolierte Delayline (max. 16 s, exakte Puffergröße, Lese-Index in double), Feedback mit HP/LP und `tanh`-Sättigung (bei 44,1/48 kHz 2-fach überabgetastet, `Source/Oversampler.h`), Übergangsmodi (Repitch glättet die Zeit, Fade und Jump blenden zwischen zwei Abgriffen), LFO, Hüllkurvenfolger.
 - `Source/Tape.h`: Bandstufe für den Schreibweg einer Einheit (TAPE). `Source/Chorus.h`: analoger Chorus (Eimerketten-Stil).
-- `Source/Spatializer.*`: 3D-Platzierung (Stereo-Bühne und Binaural).
+- `Source/Spatializer.*`, `Source/Hrtf.h`: 3D-Platzierung (Stereo-Bühne und Binaural mit gemessener HRTF; Daten in `Resources/Hrtf`, erzeugt mit `tools/make_hrtf.py`).
 - `Source/GlobalFilter.*`, `Source/NoiseSource.*`: globaler Filter und Noise-Quelle.
 - `Source/QuadEngine.*`: vier Einheiten, Algorithmen, Mute/Solo, Original-Spur (trennt Original und Echos am Ausgang), gewichtete Ausgangssumme, globaler Mix, Ducking, Soft-Limiter, Pegel für die UI. Reines DSP ohne Plugin-Abhängigkeit, daher offline testbar.
 - `Source/Params.*`, `Source/Presets.*`: APVTS-Layout, lockfreies Lesen der Parameter, Start-Presets.
@@ -302,3 +304,8 @@ Je Einheit (Präfix `a_` bis `d_`, 60 Parameter), global 13 Parameter und im Exp
 - UI: `PluginEditor`, `UnitPanel`, `Widgets.h` (Echo-Anzeige, Modulationsanzeige, Chips), `PadComponent.h`, `RoutingSelector.h`, `UiCommon.h`, `UiExtras.h` (Tooltips, Pegel).
 - Audio-Thread: keine Allokation, keine Locks, kein Logging; Denormals werden abgefangen (die Engine setzt FTZ/DAZ selbst); NaN/Inf vom Host wird zu Stille; alle Parameter geglättet. Ausgang unabhängig von der Blockgröße des Hosts (Steuerraster an der absoluten Sample-Position). Tail-Länge wird aus Zeiten, Feedback und Filtern berechnet (unendlich bei Dauerschwingung, Freeze oder Noise). Latenz 0. Mono- und Stereo-Bus (Mono läuft intern stereo und wird heruntergemischt). Tempo-Sync über den Host-Playhead (Standard 120 BPM ohne Host).
 - CPU (Thread-CPU-Zeit, `QuadEchoTests --harness bench`): Standardeinstellungen etwa 2,3 % der Blockzeit bei 48 kHz und 6 % bei 192 kHz (Block 32); Worst Case (alles an) etwa 7 % bzw. 18 %.
+
+## Danksagung
+
+Der Binaural-Modus nutzt HRTF-Messungen eines KEMAR-Kunstkopfs: Bill Gardner und Keith Martin, *HRTF Measurements of a KEMAR Dummy-Head Microphone*, MIT Media Lab, 1994 (http://sound.media.mit.edu/resources/KEMAR.html). Die Daten sind frei nutzbar unter der Bedingung, dass die Autoren genannt werden; sie wurden für das Plugin diffusfeld-entzerrt und minimalphasig umgerechnet (`tools/make_hrtf.py`).
+

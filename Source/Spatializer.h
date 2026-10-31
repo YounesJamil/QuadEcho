@@ -2,6 +2,7 @@
 #include <juce_dsp/juce_dsp.h>
 #include "DelayLine.h"
 #include "DspTypes.h"
+#include "Hrtf.h"
 
 namespace qe
 {
@@ -19,8 +20,8 @@ struct SpatialOptions
 //
 // Stereo-Modus: Equal-Power-Pan nach X, ITD bis 0,6 ms, Hoehenverlust am abgewandten Ohr;
 //   hinten klingt dezent dumpfer und leiser (Stereo kann hinten nicht wirklich abbilden).
-// Binaural-Modus (Kopfhoerer): Kugel-Kopf-Modell: ITD nach Woodworth, Kopfschatten nach
-//   Brown/Duda, Ohrmuschel-Daempfung hinten, Hoehenfaerbung.
+// Binaural-Modus (Kopfhoerer): gemessene HRTF (MIT KEMAR, Hrtf.h) fuer Pegel- und Klangunterschiede der Ohren,
+//   Hinten und Hoehe; Laufzeitdifferenz nach Woodworth (Kugel-Kopf).
 // Beide: Luftabsorption, Stereobreite sinkt mit Distanz, optionale Laufzeit d/343 (mit Doppler),
 //   3 sehr kurze fruehe Reflexionen, Z-Peak/Notch 6..10 kHz. Kein Hall.
 class Spatializer
@@ -63,6 +64,8 @@ private:
     float dRef = 1.0f;
     Biquad peak[2];
     Shadow shadow[2];
+    HrtfPair hrtf;
+    float fBm = 0.0f;   // Binaural-Anteil des laufenden Teilblocks
     float gPrev[2] = { 1.0f, 1.0f };
     int framePos = 0;   // Position im 16er-Teilblock (Steuerraster), ueber Aufrufe hinweg
     // Steuerwerte des laufenden Teilblocks

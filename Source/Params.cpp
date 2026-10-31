@@ -55,6 +55,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout createLayout()
     layout.add (std::make_unique<BoolP> (juce::ParameterID { kIdLimiter, 1 }, "Soft Limiter", true));
     layout.add (std::make_unique<BoolP> (juce::ParameterID { kIdLimitDry, 1 }, "Limiter On Dry", false));
     layout.add (std::make_unique<BoolP> (juce::ParameterID { kIdFreezeAll, 1 }, "Freeze All", false));
+    layout.add (std::make_unique<BoolP> (juce::ParameterID { kIdAutoLevel, 1 }, "Auto Level", false));
     layout.add (std::make_unique<ChoiceP> (juce::ParameterID { kIdRouteMode, 1 }, "Routing Mode", juce::StringArray { "Audio", "Phase", "Phase + Dry" }, 0));
     layout.add (std::make_unique<FloatP> (juce::ParameterID { kIdRouteDepth, 1 }, "Phase Depth", Range (0.0f, 1.0f, 0.001f), 0.25f, unit ("")));
 
@@ -251,6 +252,7 @@ ParamReader::ParamReader (juce::AudioProcessorValueTreeState& apvts)
     limiter = apvts.getRawParameterValue (kIdLimiter);
     limitDry = apvts.getRawParameterValue (kIdLimitDry);
     freezeAll = apvts.getRawParameterValue (kIdFreezeAll);
+    autoLevel = apvts.getRawParameterValue (kIdAutoLevel);
     routeMode = apvts.getRawParameterValue (kIdRouteMode);
     routeDepth = apvts.getRawParameterValue (kIdRouteDepth);
     for (int g = 0; g < gCount; ++g) glob[(size_t) g] = apvts.getRawParameterValue (kGlobalIds[g]);
@@ -294,6 +296,7 @@ void ParamReader::read (EngineSettings& s) const
     s.softLimiter = limiter->load() > 0.5f;
     s.limitDry = limitDry->load() > 0.5f;
     s.freezeAll = freezeAll->load() > 0.5f;
+    s.autoLevel = autoLevel->load() > 0.5f;
     s.routeMode = (int) (routeMode->load() + 0.5f);
     s.routeDepth = routeDepth->load();
 

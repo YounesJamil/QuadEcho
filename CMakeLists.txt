@@ -39,6 +39,10 @@ juce_add_binary_data(QuadEchoFonts SOURCES
     Resources/Fonts/BarlowSemiCondensed-SemiBold.ttf
     Resources/Fonts/BarlowSemiCondensed-Bold.ttf)
 
+# Gemessene HRTF fuer den Binaural-Modus (MIT KEMAR, Gardner und Martin 1994; erzeugt mit tools/make_hrtf.py)
+juce_add_binary_data(QuadEchoHrtf HEADER_NAME HrtfData.h NAMESPACE HrtfData SOURCES
+    Resources/Hrtf/kemar_df_mp64.bin)
+
 set(QUADECHO_DSP_SOURCES
     Source/DelayUnit.cpp
     Source/Spatializer.cpp
@@ -60,6 +64,7 @@ target_compile_definitions(QuadEcho PUBLIC
 
 target_link_libraries(QuadEcho PRIVATE
     QuadEchoFonts
+    QuadEchoHrtf
     juce::juce_audio_utils
     juce::juce_dsp
     PUBLIC
@@ -71,6 +76,7 @@ target_link_libraries(QuadEcho PRIVATE
 juce_add_console_app(QuadEchoTests PRODUCT_NAME "QuadEchoTests")
 target_sources(QuadEchoTests PRIVATE tests/Tests.cpp tests/Harness.cpp tests/Audit.cpp ${QUADECHO_DSP_SOURCES})
 target_link_libraries(QuadEchoTests PRIVATE
+    QuadEchoHrtf
     juce::juce_audio_formats
     juce::juce_dsp
     PUBLIC
@@ -89,6 +95,7 @@ target_sources(QuadEchoUiShot PRIVATE
 target_compile_definitions(QuadEchoUiShot PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
 target_link_libraries(QuadEchoUiShot PRIVATE
     QuadEchoFonts
+    QuadEchoHrtf
     juce::juce_audio_utils
     juce::juce_dsp
     PUBLIC

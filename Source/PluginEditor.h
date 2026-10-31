@@ -58,7 +58,7 @@ private:
     std::unique_ptr<juce::ParameterAttachment> routeWatch, limiterWatch;
     PadComponent pad;
     std::unique_ptr<ui::Knob> gMix, gOut, gFb, gDoppler;
-    std::unique_ptr<ui::Toggle> gBinaural, gDist, gEarly, gLimiter, gLimitDry, gFreezeAll;
+    std::unique_ptr<ui::Toggle> gBinaural, gDist, gEarly, gLimiter, gLimitDry, gFreezeAll, gAutoLevel;
     std::array<std::array<std::unique_ptr<juce::Slider>, 3>, kPosRows> posSliders;
     std::array<std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 3>, kPosRows> posAttach;
     std::array<std::unique_ptr<UnitPanel>, qe::kNumUnits> panels;

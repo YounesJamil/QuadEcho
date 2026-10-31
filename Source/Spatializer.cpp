@@ -41,6 +41,7 @@ void Spatializer::prepare (double sampleRate)
     for (auto* sm : { &xSm, &ySm, &zSm }) sm->reset (sampleRate, 0.05);
     distOnSm.reset (sampleRate, 0.1);
     binSm.reset (sampleRate, 0.08);
+    hrtf.prepare (sampleRate);
     reset();
 }
 
@@ -51,6 +52,7 @@ void Spatializer::reset()
     erLp = 0.0f;
     peak[0] = Biquad(); peak[1] = Biquad();
     shadow[0] = Shadow(); shadow[1] = Shadow();
+    hrtf.reset();
     gPrev[0] = gPrev[1] = 1.0f;
     framePos = 0;
     initialised = false;
@@ -140,10 +142,14 @@ void Spatializer::process (float* l, float* r, int n, const PosSettings& p, cons
         const float alpha = std::asin (sinA);
         const float itdB = (kHeadRadius / kSpeedOfSound) * (std::abs (alpha) + std::abs (sinA)) * fs;
         const float dB[2] = { sinA > 0.0f ? itdB : 0.0f, sinA < 0.0f ? itdB : 0.0f };
-        const float awB[2] = { shadowAlpha (std::acos (clampf (-sinA, -1.0f, 1.0f))),
-                               shadowAlpha (std::acos (clampf (sinA, -1.0f, 1.0f))) };
-        const float gB[2] = { gDist * (1.0f - 0.25f * sinA), gDist * (1.0f + 0.25f * sinA) };
-        const float fcRearB = fcAir * (1.0f - 0.78f * rearW);
+        // Pegel- und Klangunterschiede der Ohren, Hinten und Hoehe kommen aus der gemessenen HRTF (unten im Signalweg)
+        const float awB[2] = { 1.0f, 1.0f };
+        const float gB[2] = { gDist, gDist };
+        const float fcRearB = fcAir;
+        (void) rearW;
+        if (bm > 0.0f || o.binaural)
+            hrtf.setDirection (azimuth * 57.29578f, elevation * 57.29578f, lateralFade);
+        fBm = bm;
 
         // ---- Mischung der Modi (weich beim Umschalten) ----
         float aw[2], fc[2];
@@ -178,8 +184,8 @@ void Spatializer::process (float* l, float* r, int n, const PosSettings& p, cons
 
         // Hoehe: Peak (z>0) bzw. Senke (z<0) zwischen 6 und 10 kHz
         const float fz = 6000.0f + 4000.0f * (0.5f * z + 0.5f);
-        setPeak (peak[0], fz, 5.0f * z, 1.5f);
-        setPeak (peak[1], fz, 5.0f * z, 1.5f);
+        setPeak (peak[0], fz, 5.0f * z * (1.0f - bm), 1.5f);   // Binaural: die HRTF bildet die Hoehe selbst ab
+        setPeak (peak[1], fz, 5.0f * z * (1.0f - bm), 1.5f);
 
         // Fruehe Reflexionen (Anteil steigt mit Distanz)
         fErAmt = o.earlyReflections ? lerp (0.4f * depth * depth * depth, 0.35f * clampf ((d - 1.0f) / 3.0f, 0.0f, 1.0f), bm) : 0.0f;
@@ -211,6 +217,13 @@ void Spatializer::process (float* l, float* r, int n, const PosSettings& p, cons
 
             l3 = shadow[0].tick (l3);
             r3 = shadow[1].tick (r3);
+            if (fBm > 0.0f)   // gemessene HRTF, beim Umschalten weich ueberblendet
+            {
+                float hl = l3, hr = r3;
+                hrtf.process (hl, hr);
+                l3 += (hl - l3) * fBm;
+                r3 += (hr - r3) * fBm;
+            }
 
             lpState[0] = l3 * (1.0f - lpA[0]) + lpState[0] * lpA[0];
             lpState[1] = r3 * (1.0f - lpA[1]) + lpState[1] * lpA[1];

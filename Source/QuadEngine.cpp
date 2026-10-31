@@ -4,6 +4,8 @@ namespace qe
 {
 namespace
 {
+constexpr float kAutoLevelP = 1.45f;   // AUTO LEVEL: Mass zwischen Amplitude (1) und Energie (2), kalibriert: freie Zeiten -2,8 dB, Tempo-Zeiten +2,9 dB
+
 // Weiche Begrenzung: unter 0.8 unveraendert, darueber sanft gegen 1.0
 inline float softLimit (float x)
 {
@@ -50,6 +52,7 @@ void QuadEngine::prepare (double sampleRate)
     gfilter.prepare (sampleRate);
     for (auto& o : onSm) o.reset (sampleRate, 0.02);
     for (auto& o : outW) o.reset (sampleRate, 0.02);
+    for (auto& o : autoSm) { o.reset (sampleRate, 0.05); o.setCurrentAndTargetValue (1.0f); }
     for (auto& o : dryPlaceSm) o.reset (sampleRate, 0.03);
     for (auto& o : dryPanSm) o.reset (sampleRate, 0.05);
     activeSm.reset (sampleRate, 0.02);
@@ -235,11 +238,24 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
     std::array<float, kChunk> routeMs;
     for (int i = 0; i < n; ++i) { const float d = routeDepthSm.getNextValue(); routeMs[(size_t) i] = d * d * kMaxRouteMs; }
 
+    // AUTO LEVEL: erwartete Amplitude des Echo-Anteils je Einheit, relativ zum Original. Gerechnet wird mit Amplituden
+    // (Echos fallen in Ketten mit Tempo-Delays oft zeitlich zusammen und addieren sich dann voll), nicht mit Energien.
+    std::array<float, kNumUnits> echoEnergy {};
+
     for (int u = 0; u < kNumUnits; ++u)
     {
         const auto uu = (size_t) u;
         const int mask = algo.sources[uu];
         const bool phaseFed = phaseRoute && mask != 0;
+        float eIn = 0.0f;   // Echo-Amplitude am Eingang: Mittel der Quellen
+        if (mask != 0 && ! phaseFed)
+        {
+            int cnt = 0;
+            for (int j = 0; j < kNumUnits; ++j)
+                if (mask & (1 << j)) { eIn += echoEnergy[(size_t) j]; ++cnt; }
+            eIn /= (float) cnt;
+        }
+        echoEnergy[uu] = eIn;   // aus: reicht nur durch
         if (phaseFed)
         {
             int count = 0;
@@ -347,6 +363,34 @@ void QuadEngine::processChunk (float* l, float* r, int n, const EngineSettings& 
                 outs[uu].r[ui] = src.r[ui] + (tmp.r[ui] - src.r[ui]) * g;
                 origs[uu].l[ui] = origSrc.l[ui] + (origTmp.l[ui] - origSrc.l[ui]) * g;
                 origs[uu].r[ui] = origSrc.r[ui] + (origTmp.r[ui] - origSrc.r[ui]) * g;
+            }
+            // AUTO LEVEL: Die Einheit allein erzeugt Echos mit der Amplitude a = g / (1 - fb) (Echo-Pegel g, Feedback fb).
+            // Gespeist, echot sie auch die ankommenden Echos: eIn + a (1 + eIn). Ihr Echo-Anteil wird auf das Groessere von
+            // eIn und a zurueckgenommen: die Kette waechst nicht, wird aber auch nicht leiser als die lauteste Stufe allein.
+            // Das Original bleibt unberuehrt.
+            {
+                const float fbE = std::min (std::abs (es.feedback), 0.95f);
+                // Mass zwischen Amplitude (p = 1, Echos fallen zusammen) und Energie (p = 2, unkorreliert), kalibriert an Ketten
+                // mit freien und mit Tempo-Zeiten
+                constexpr float p = kAutoLevelP;
+                const float amp = std::pow (es.mix, p) / (1.0f - std::pow (fbE, p)), grown = eIn + amp * (1.0f + eIn);
+                float k = 1.0f;
+                if (s.autoLevel && grown > 1.0e-9f)
+                {
+                    k = std::pow (std::max (eIn, amp) / grown, 1.0f / p);
+                    echoEnergy[uu] = std::max (eIn, amp);
+                }
+                else echoEnergy[uu] = grown;
+                autoSm[uu].setTargetValue (k);
+                if (autoSm[uu].isSmoothing() || autoSm[uu].getCurrentValue() != 1.0f)
+                    for (int i = 0; i < n; ++i)
+                    {
+                        const auto ui = (size_t) i;
+                        const float a = autoSm[uu].getNextValue();
+                        outs[uu].l[ui] = origs[uu].l[ui] + (outs[uu].l[ui] - origs[uu].l[ui]) * a;
+                        outs[uu].r[ui] = origs[uu].r[ui] + (outs[uu].r[ui] - origs[uu].r[ui]) * a;
+                        if (needFirst) { firsts[uu].l[ui] *= a; firsts[uu].r[ui] *= a; }
+                    }
             }
         }
         else

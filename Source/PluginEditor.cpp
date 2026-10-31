@@ -156,6 +156,8 @@ QuadEchoEditor::QuadEchoEditor (QuadEchoProcessor& p)
     gLimiter = std::make_unique<ui::Toggle> (apvts, qe::kIdLimiter, "LIMITER", ui::kAccent);
     gLimitDry = std::make_unique<ui::Toggle> (apvts, qe::kIdLimitDry, "ON DRY", ui::kAccent);
     gFreezeAll = std::make_unique<ui::Toggle> (apvts, qe::kIdFreezeAll, "FREEZE ALL", ui::kNoiseColour);
+    gAutoLevel = std::make_unique<ui::Toggle> (apvts, qe::kIdAutoLevel, "AUTO LEVEL", ui::kAccent);
+    gAutoLevel->setTooltip ("Keeps chains about as loud as a single unit: the echoes of every unit that is fed by another one are lowered by the amount they add (from echo level and feedback). Off = pedal behaviour, chains get louder.");
     limiterWatch = std::make_unique<juce::ParameterAttachment> (*apvts.getParameter (qe::kIdLimiter), [this] (float v)
     {
         gLimitDry->setEnabled (v > 0.5f);   // ON DRY wirkt nur mit Limiter
@@ -174,7 +176,7 @@ QuadEchoEditor::QuadEchoEditor (QuadEchoProcessor& p)
     gEarly->setTooltip (ui::tooltipForGlobal (qe::kIdEarly));
     gLimiter->setTooltip (ui::tooltipForGlobal (qe::kIdLimiter));
     gLimitDry->setTooltip (ui::tooltipForGlobal (qe::kIdLimitDry));
-    for (auto* t : { gBinaural.get(), gDist.get(), gEarly.get(), gLimiter.get(), gLimitDry.get(), gFreezeAll.get() }) content.addAndMakeVisible (*t);
+    for (auto* t : { gBinaural.get(), gDist.get(), gEarly.get(), gLimiter.get(), gLimitDry.get(), gFreezeAll.get(), gAutoLevel.get() }) content.addAndMakeVisible (*t);
 
     // Positions-Zahlenfelder (A-D und Noise): Balken von der Mitte aus, Wert per Doppelklick eintippen
     static const char* heads[3] = { "X  LEFT / RIGHT", "Y  BACK / FRONT", "Z  HEIGHT" };
@@ -358,7 +360,7 @@ void QuadEchoEditor::setCompact (bool compact)
     proc.apvts.state.setProperty ("uiCompact", compact, nullptr);
     compactBtn.setToggleState (compact, juce::dontSendNotification);
     for (juce::Component* c : std::initializer_list<juce::Component*> { &routing, routeMode.get(), &routeDepth, gMix.get(), gOut.get(), gFb.get(),
-                                                                       gLimiter.get(), gLimitDry.get(), gFreezeAll.get(), &pad, gBinaural.get(),
+                                                                       gLimiter.get(), gLimitDry.get(), gFreezeAll.get(), gAutoLevel.get(), &pad, gBinaural.get(),
                                                                        gEarly.get(), gDist.get(), gDoppler.get() })
         c->setVisible (! compact);
     for (auto& h : posHeads) h.setVisible (! compact);
@@ -452,9 +454,10 @@ void QuadEchoEditor::resized()
     gMix->setBounds (m.getX() + 6, m.getY() + 22, 88, 102);
     gOut->setBounds (m.getX() + 94, m.getY() + 22, 88, 102);
     gFb->setBounds (m.getX() + 182, m.getY() + 22, 88, 102);
-    gLimiter->setBounds (m.getX() + 274, m.getY() + 24, 80, 26);
-    gLimitDry->setBounds (m.getX() + 274, m.getY() + 56, 80, 26);
-    gFreezeAll->setBounds (m.getX() + 274, m.getY() + 88, 80, 26);
+    gLimiter->setBounds (m.getX() + 274, m.getY() + 20, 80, 23);
+    gLimitDry->setBounds (m.getX() + 274, m.getY() + 47, 80, 23);
+    gFreezeAll->setBounds (m.getX() + 274, m.getY() + 74, 80, 23);
+    gAutoLevel->setBounds (m.getX() + 274, m.getY() + 101, 80, 23);
 
     pad.setBounds (392, 48, 288, 290);
 

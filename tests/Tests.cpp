@@ -1768,6 +1768,31 @@ void testAuditFixes()
         check (dC > 0.01f && finite (oL, 3.0f) && peakAbs (oL.l, (size_t) (2 * sr)) < 2.1f, "Chorus: wirkt auf die Echos, in der Schleife begrenzt");
     }
 
+    // AUTO LEVEL: Serial A > B > C > D (Echo-Pegel 100 %, Feedback 60 %) bleibt etwa so laut wie A allein
+    {
+        auto echoesRms = [&] (bool chain, bool autoLevel, bool tempo)
+        {
+            EngineSettings s;
+            s.algorithm = 0; s.globalMix = 1.0f; s.softLimiter = false; s.earlyReflections = false; s.autoLevel = autoLevel;
+            const float tempoMs[4] = { 125.0f, 375.0f, 250.0f, 500.0f };   // 1/16, 1/8., 1/8, 1/4 bei 120 BPM
+            for (int u = 0; u < 4; ++u)
+            {
+                auto& e = s.echo[(size_t) u]; e.on = chain || u == 3; e.feedback = 0.6f; e.mix = 1.0f;
+                e.timeL = e.timeR = tempo ? tempoMs[u] : 70.0f + 37.0f * (float) u;
+            }
+            auto e = std::make_unique<QuadEngine>(); e->prepare (sr);
+            const auto o = runEngine (*e, s, noise ((size_t) (6 * sr), 0.1f, 9), 256);
+            return rms (o.l, (size_t) (3 * sr), o.l.size());
+        };
+        for (bool tempo : { false, true })
+        {
+            const float single = echoesRms (false, false, tempo), chain = echoesRms (true, false, tempo), chainAuto = echoesRms (true, true, tempo);
+            check (toDb (chain / single) > 4.0f && std::abs (toDb (chainAuto / single)) < 3.5f,
+                   std::string ("AUTO LEVEL (") + (tempo ? "Tempo" : "frei") + "): Kette ohne " + std::to_string (toDb (chain / single)) + " dB, mit "
+                   + std::to_string (toDb (chainAuto / single)) + " dB gegen eine Einheit");
+        }
+    }
+
     // A2/A3: bei konstanten Parametern ist der Ausgang unabhaengig von der Blockgroesse (auch 1, 441, wechselnd)
     {
         auto render = [] (const harness::Case& c, const Sig& in, double fs, const std::function<int (size_t)>& next)

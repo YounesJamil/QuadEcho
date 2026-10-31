@@ -72,6 +72,7 @@ inline const char* const kIdGlobalFb = "gFb";
 inline const char* const kIdLimiter = "limiter";
 inline const char* const kIdLimitDry = "limitDry";
 inline const char* const kIdFreezeAll = "freezeAll";
+inline const char* const kIdAutoLevel = "autoLevel";
 inline const char* const kIdRouteMode = "routeMode";
 inline const char* const kIdRouteDepth = "routeDepth";
 
@@ -98,6 +99,7 @@ private:
     std::atomic<float>* limiter = nullptr;
     std::atomic<float>* limitDry = nullptr;
     std::atomic<float>* freezeAll = nullptr;
+    std::atomic<float>* autoLevel = nullptr;
     std::atomic<float>* routeMode = nullptr;
     std::atomic<float>* routeDepth = nullptr;
     std::array<std::atomic<float>*, gCount> glob {};

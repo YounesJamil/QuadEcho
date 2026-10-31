@@ -58,7 +58,7 @@ private:
     NoiseSource noise;
     Spatializer noiseSpatial;
     GlobalFilter gfilter;
-    std::array<juce::SmoothedValue<float>, kNumUnits> onSm, outW;
+    std::array<juce::SmoothedValue<float>, kNumUnits> onSm, outW, autoSm;   // autoSm: AUTO LEVEL je Einheit
     juce::SmoothedValue<float> activeSm, deadSm, soloDeadSm, intoSm, inclDrySm;
     std::array<juce::SmoothedValue<float>, kNumUnits> dryPlaceSm, dryPanSm;   // Place Dry: Anteil und Seite (X)
     std::array<bool, kNumUnits> wasActive { { false, false, false, false } };

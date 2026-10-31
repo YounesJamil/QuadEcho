@@ -184,6 +184,7 @@ struct EngineSettings
     float feedbackScale = 1.0f;   // globaler Feedback-Faktor 0..2 (1 = wie in den Einheiten)
     bool softLimiter = true;
     bool limitDry = false;        // Limiter auch auf das Original; aus = Original unangetastet, nur die Echos werden begrenzt
+    bool autoLevel = false;       // AUTO LEVEL: Echo-Anteil gespeister Einheiten so absenken, dass Ketten nicht lauter werden
     bool freezeAll = false;       // FREEZE ALL: alle Einheiten halten (zusaetzlich zu ihren eigenen Freeze-Schaltern)
     int routeMode = RouteAudio;   // Verbindungen zwischen den Einheiten: Audio oder Phasenmodulation (siehe QuadEngine)
     float routeDepth = 0.25f;     // Phasenmodulation: Lese-Verschiebung bei Vollaussteuerung = routeDepth^2 * kMaxRouteMs

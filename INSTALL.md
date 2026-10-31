@@ -25,6 +25,8 @@ QUAD ECHO von Younes Jamil. Delay-Plugin mit vier Einheiten, Routing und 3D-Plat
 
 3. DAW neu starten bzw. nach Plugins suchen lassen. Taucht das AU in Logic nicht auf: Mac neu starten oder im Terminal `killall -9 AudioComponentRegistrar` und Logic neu öffnen.
 
-## Lizenz der Schrift
+## Lizenzen und Danksagung
 
 Die Oberfläche nutzt die eingebaute Schrift *Barlow Semi Condensed* (SIL Open Font License, siehe `OFL-Barlow.txt`).
+
+Der Binaural-Modus nutzt HRTF-Messungen von Bill Gardner und Keith Martin, MIT Media Lab 1994 (KEMAR-Kunstkopf, http://sound.media.mit.edu/resources/KEMAR.html).
